@@ -21,6 +21,7 @@ import {
   getLocalizedProfileContent,
   mapToPublicTranslateLang,
   parseGoogleTranslateResponse,
+  translateTermsPublicFallback,
 } from './profileTranslation';
 import type { PsychologicalProfile, Track } from '../types';
 
@@ -189,6 +190,9 @@ test('buildFallbackPsychologicalProfile summarizes track countries, languages, a
   const draft = buildFallbackPsychologicalProfile(SAMPLE_TRACKS);
   assert.equal(draft.trackCount, 3);
   assert.ok(draft.personalitySummary.includes('Argentina'));
+  assert.ok(draft.personalitySummary.includes('rutinas'));
+  assert.ok(draft.personalitySummary.includes('compañías'));
+  assert.ok(draft.personalitySummary.length <= 1450);
   assert.ok(draft.musicalTasteSummary.includes('Soda Stereo'));
   assert.ok(draft.keyTraits.length >= 3 && draft.keyTraits.length <= 5);
   assert.ok(formatProfileDate(Date.UTC(2026, 10, 15, 12, 0), 'es').includes('2026'));
@@ -260,4 +264,27 @@ test('getLocalizedProfileContent prioritizes pre-translated profile and falls ba
     parseGoogleTranslateResponse([[['Hello ', 'Hola '], ['world', 'mundo']]]),
     'Hello world'
   );
+});
+
+test('translateTermsPublicFallback batches >30 video comments/descriptions, preserves keys, and uses sl=auto', async () => {
+  const seenUrls: string[] = [];
+  const mockFetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    seenUrls.push(url);
+    const qParam = new URL(url).searchParams.get('q') ?? '';
+    return new Response(JSON.stringify([[[`EN:${qParam}`, qParam]]]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  const manyComments = Array.from({ length: 36 }, (_, idx) => `Comentario del video ${idx + 1}`);
+  manyComments.push('  Nota con espacios  ');
+
+  const translated = await translateTermsPublicFallback(manyComments, 'en', mockFetch);
+  assert.equal(seenUrls.length, 37);
+  assert.ok(seenUrls.every((u) => u.includes('sl=auto&tl=en')));
+  assert.equal(translated['Comentario del video 36'], 'EN:Comentario del video 36');
+  assert.equal(translated['  Nota con espacios  '], 'EN:Nota con espacios');
+  assert.equal(translated['Nota con espacios'], 'EN:Nota con espacios');
 });

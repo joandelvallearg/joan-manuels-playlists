@@ -356,9 +356,15 @@ export default function App() {
       ...(aiCache[currentLang]?.translatedTerms ?? {}),
     };
 
-    const missingTerms = dynamicTerms.filter(
-      (term) => !staticTerms[term] && !knownTerms[term]
-    );
+    const missingTerms = dynamicTerms.filter((term) => {
+      const trimmed = term.trim();
+      return (
+        !staticTerms[term] &&
+        !staticTerms[trimmed] &&
+        !knownTerms[term] &&
+        !knownTerms[trimmed]
+      );
+    });
     const needsUiTranslation =
       !staticDict &&
       !aiCache[currentLang]?.translatedUi?.navPhotos &&
@@ -371,6 +377,7 @@ export default function App() {
     if (!needsUiTranslation && missingTerms.length === 0) return;
 
     let cancelled = false;
+    const abortController = new AbortController();
     setIsTranslating(true);
 
     const runTranslation = async () => {
@@ -383,6 +390,7 @@ export default function App() {
         const res = await fetch('/api/translate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: abortController.signal,
           body: JSON.stringify({
             targetLanguage: langMeta ? `${langMeta.englishName} (${currentLang})` : currentLang,
             ownerName: OWNER_SPANISH_NAME,
@@ -402,7 +410,11 @@ export default function App() {
         // Static deployment or offline /api/translate -> handled by fallback below
       }
 
-      const stillUntranslated = missingTerms.filter((term) => !nextTerms[term]);
+      if (cancelled) return;
+
+      const stillUntranslated = missingTerms.filter(
+        (term) => !nextTerms[term] && !nextTerms[term.trim()]
+      );
       if (stillUntranslated.length > 0) {
         const fallbackMap = await translateTermsPublicFallback(stillUntranslated, currentLang);
         Object.assign(nextTerms, fallbackMap);
@@ -427,12 +439,17 @@ export default function App() {
       });
     };
 
-    runTranslation().finally(() => {
-      if (!cancelled) setIsTranslating(false);
-    });
+    const timerId = window.setTimeout(() => {
+      if (cancelled) return;
+      runTranslation().finally(() => {
+        if (!cancelled) setIsTranslating(false);
+      });
+    }, 220);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timerId);
+      abortController.abort();
     };
   }, [currentLang, dynamicTerms]);
 
@@ -460,10 +477,14 @@ export default function App() {
   const translateTerm = useCallback(
     (term: string): string => {
       if (!term || currentLang === 'es') return term;
+      const trimmed = term.trim();
       return (
         localIntlTerms[term] ||
+        localIntlTerms[trimmed] ||
         STATIC_TERM_TRANSLATIONS[currentLang]?.[term] ||
+        STATIC_TERM_TRANSLATIONS[currentLang]?.[trimmed] ||
         aiCache[currentLang]?.translatedTerms?.[term] ||
+        aiCache[currentLang]?.translatedTerms?.[trimmed] ||
         term
       );
     },

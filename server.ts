@@ -386,14 +386,14 @@ async function createApp() {
       }
 
       const entries = Object.entries(uiStrings).slice(0, 80);
-      const uniqueTerms: string[] = Array.from(new Set<string>(terms)).slice(0, 80);
+      const uniqueTerms: string[] = Array.from(new Set<string>(terms)).slice(0, 120);
 
       const prompt = [
         `Target visitor language code/name: "${targetLanguage}".`,
         `Owner Spanish full name: "${ownerName}".`,
         'Task 1: Transliterate the owner\'s Spanish full name phonetically into the natural writing script of the target language.',
         'Task 2: Translate every UI string from Spanish into the target language naturally and concisely (keep navigation labels 1-3 words).',
-        'Task 3: Translate EVERY indexed item in TERMS (including full psychological profile paragraphs, personality traits, photo captions, genres, and curator notes) completely and naturally from Spanish into the target language without summarizing or omitting sentences. Preserve each numeric "id" verbatim.',
+        'Task 3: Translate EVERY indexed item in TERMS (including video curator notes/comments, music genres, country/language descriptions, photo captions, personality traits, and full psychological profile paragraphs) completely and naturally from its original language (typically Spanish) into the target language without summarizing or omitting sentences. Preserve each numeric "id" verbatim.',
         '',
         'UI_STRINGS:',
         JSON.stringify(entries.map(([key, value]) => ({ key, value }))),
@@ -637,7 +637,7 @@ async function createApp() {
       const languages = Array.from(new Set(tracks.map((t) => t.language).filter(Boolean)));
       const genres = Array.from(new Set(tracks.map((t) => t.genre).filter(Boolean)));
       const fallbackDraft = {
-        personalitySummary: `Joan Manuel se perfila como un hombre curioso, sensible a los matices culturales y atento a las emociones que transmite la música de ${countries.slice(0, 4).join(', ') || 'distintos lugares'}. Su selección sugiere apertura mental y una forma introspectiva pero cálida de conectar con el mundo.`,
+        personalitySummary: `Joan Manuel se perfila como un hombre curioso, sensible a los matices culturales y atento a las emociones que transmite la música de ${countries.slice(0, 4).join(', ') || 'distintos lugares'}. Esa misma sensibilidad sugiere a alguien que disfruta de caminatas tranquilas o cafés con buena conversación, aprecia artes visuales como el cine o la fotografía con atmósfera propia, valora rutinas equilibradas entre el silencio creativo y la energía compartida, y se rodea de compañías auténticas, curiosas y sin poses.`,
         musicalTasteSummary: `Sus ${tracks.length} canciones actuales recorren ${genres.slice(0, 5).join(', ') || 'diversos estilos'} en ${languages.slice(0, 4).join(', ') || 'varios idiomas'}, mostrando un gusto personal por piezas con identidad y carácter propio.`,
         keyTraits: [
           countries.length >= 2 ? 'Mente abierta y curiosa' : 'Identidad cultural definida',
@@ -662,16 +662,18 @@ async function createApp() {
       );
 
       const prompt = [
-        'Analiza la lista actual de canciones favoritas de Joan Manuel Sebastian Del Valle y elabora en español un perfil psicológico respetuoso, cálido, perspicaz y realista sobre qué tipo de hombre es y qué tipo de gustos musicales tiene, para que los visitantes de su página web lo conozcan mejor.',
+        'Actúa como el mejor psicólogo de la personalidad y musicólogo cultural del mundo. Analiza la lista actual de canciones favoritas de Joan Manuel Sebastian Del Valle y elabora en español un perfil psicológico profundo, cálido, perspicaz y realista para que los visitantes de su página web lo conozcan mejor.',
         '',
         `Total de canciones actuales: ${tracks.length}`,
         'Canciones en su página:',
         ...trackSummaryLines,
         '',
         'Reglas:',
-        '- personalitySummary: 2 a 3 oraciones en tercera persona ("Joan Manuel...") explicando qué tipo de hombre refleja esta selección (sensibilidad, apertura cultural, carácter, mundo interior). Máximo 900 caracteres.',
-        '- musicalTasteSummary: 2 a 3 oraciones analizando sus gustos musicales (géneros, idiomas, países, energía/atmósfera, contrastes). Máximo 900 caracteres.',
-        '- keyTraits: Lista de 3 a 5 rasgos cortos y claros en español (máximo 7 palabras cada uno, sin hashtags ni emojis).',
+        '- personalitySummary (Qué tipo de hombre refleja su música): Redacta 3 a 4 oraciones fluidas en tercera persona ("Joan Manuel..."), máximo 1350 caracteres:',
+        '  1) En las primeras 2 oraciones, describe qué tipo de hombre refleja esta selección (su mundo interior, sensibilidad emocional, equilibrio entre introspección y vitalidad, apertura cultural).',
+        '  2) En las siguientes 1 a 2 oraciones, infiere con agudeza psicológica y naturalidad —a partir de los climas, idiomas, ritmos y contrastes de su música— qué otras facetas probablemente disfruta en su vida: otras actividades o pasatiempos, expresiones artísticas (por ejemplo cine, fotografía, lectura, arquitectura o gastronomía), rutinas cotidianas (momentos de calma, recorridos urbanos o nocturnos, viajes) y qué tipo de compañías, vínculos o conversaciones valora.',
+        '- musicalTasteSummary (Sus gustos y sensibilidad musical): 2 a 3 oraciones analizando sus gustos musicales (géneros, idiomas, países, energía/atmósfera, contrastes). Máximo 900 caracteres.',
+        '- keyTraits (Rasgos destacados): Lista de 3 a 5 rasgos cortos y claros en español (máximo 7 palabras cada uno, sin hashtags ni emojis).',
       ].join('\n');
 
       try {
@@ -682,7 +684,7 @@ async function createApp() {
           ],
           contents: prompt,
           systemInstruction:
-            'Eres un psicólogo cultural y crítico musical empático. Analizas gustos musicales reales para describir con calidez, agudeza y claridad la personalidad y preferencias estéticas de una persona. Devuelve únicamente JSON válido.',
+            'Eres el mejor psicólogo cultural y analista de personalidad a través de la música en el mundo. Conectas con precisión y calidez las elecciones musicales reales de una persona con su carácter, su mundo interior y las actividades, artes, rutinas y compañías humanas con las que naturalmente sintoniza. Evita estereotipos huecos y clichés; escribe con elegancia, profundidad humana y realismo. Devuelve únicamente JSON válido.',
           responseSchema: {
             type: Type.OBJECT,
             properties: {

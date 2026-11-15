@@ -335,6 +335,15 @@ export function PlaylistExplorer({
                           <span>{translateTerm(track.genre)}</span>
                         </div>
                       </dl>
+
+                      {track.curatorNote && (
+                        <p
+                          data-testid="track-card-note"
+                          className="border-t border-zinc-100 pt-2.5 text-xs text-zinc-600 leading-relaxed line-clamp-2"
+                        >
+                          {translateTerm(track.curatorNote)}
+                        </p>
+                      )}
                     </div>
                   </article>
                 );

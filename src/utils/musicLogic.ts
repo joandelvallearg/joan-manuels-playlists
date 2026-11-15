@@ -477,6 +477,7 @@ export function buildFallbackPsychologicalProfile(tracks: Track[]): GeneratedPro
     multiLang
       ? `Escuchar voces en ${languages.slice(0, 4).join(', ')} sugiere a alguien empático que presta atención a la atmósfera, la cadencia y el sentimiento detrás de cada canción más allá del idioma.`
       : `Su elección refleja intensidad emocional y gusto por las letras y melodías que acompañan momentos de introspección y disfrute genuino.`,
+    `A partir de esa sensibilidad estética, resulta natural imaginarlo disfrutando de artes narrativas y visuales como el cine o la fotografía con carácter propio, rutinas que combinan caminatas tranquilas o pausas con café con momentos de energía social, y compañías auténticas con quienes compartir conversaciones honestas sin superficialidad.`,
   ].join(' ');
 
   const musicalTasteSummary = `A partir de sus ${count} canciones actuales (con artistas como ${sampleArtists.join(', ')}), sus gustos combinan ${genres.slice(0, 5).join(', ')}. Predomina una curaduría con carácter propio: canciones con personalidad marcada, energía rítmica o melancolía elegante pensadas para escucharse con atención y compartirse.`;

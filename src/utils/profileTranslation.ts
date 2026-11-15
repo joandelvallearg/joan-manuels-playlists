@@ -24,7 +24,7 @@ export async function translateSingleViaPublicFallback(
   if (!cleanText || targetLang === 'es') return cleanText || null;
 
   const tl = mapToPublicTranslateLang(targetLang);
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=es&tl=${encodeURIComponent(
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(
     tl
   )}&dt=t&q=${encodeURIComponent(cleanText)}`;
 
@@ -48,20 +48,44 @@ export async function translateTermsPublicFallback(
   targetLang: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<Record<string, string>> {
-  const unique = Array.from(new Set(terms.map((t) => t.trim()).filter(Boolean))).slice(0, 30);
-  if (unique.length === 0 || targetLang === 'es') return {};
+  if (!targetLang || targetLang === 'es') return {};
+
+  // Group original terms by trimmed key so untrimmed curatorNotes/captions still match cache lookups
+  const originalsByTrimmed = new Map<string, Set<string>>();
+  for (const raw of terms) {
+    if (typeof raw !== 'string') continue;
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (!originalsByTrimmed.has(trimmed)) {
+      originalsByTrimmed.set(trimmed, new Set([trimmed]));
+    }
+    originalsByTrimmed.get(trimmed)!.add(raw);
+  }
+
+  const uniqueTrimmed = Array.from(originalsByTrimmed.keys()).slice(0, 120);
+  if (uniqueTrimmed.length === 0) return {};
 
   const out: Record<string, string> = {};
-  const results = await Promise.allSettled(
-    unique.map(async (term) => {
-      const translated = await translateSingleViaPublicFallback(term, targetLang, fetchImpl);
-      return { term, translated };
-    })
-  );
+  const batchSize = 8;
 
-  for (const r of results) {
-    if (r.status === 'fulfilled' && r.value.translated) {
-      out[r.value.term] = r.value.translated;
+  for (let i = 0; i < uniqueTrimmed.length; i += batchSize) {
+    const batch = uniqueTrimmed.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map(async (trimmed) => {
+        const translated = await translateSingleViaPublicFallback(trimmed, targetLang, fetchImpl);
+        return { trimmed, translated };
+      })
+    );
+
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.translated) {
+        const keys = originalsByTrimmed.get(r.value.trimmed);
+        if (keys) {
+          for (const key of keys) {
+            out[key] = r.value.translated;
+          }
+        }
+      }
     }
   }
   return out;
