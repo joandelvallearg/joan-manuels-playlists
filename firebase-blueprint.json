@@ -1,0 +1,205 @@
+{
+  "entities": {
+    "Track": {
+      "title": "Track",
+      "description": "A curated YouTube music video with AI-detected country, singing language, and genre.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "UID of the owner who added the track."
+        },
+        "youtubeId": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "YouTube 11-character video identifier."
+        },
+        "youtubeUrl": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 300,
+          "description": "Original YouTube watch or share URL."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Song or music video title."
+        },
+        "artist": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 150,
+          "description": "Performer or artist name."
+        },
+        "country": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Country of origin detected by AI."
+        },
+        "countryCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 3,
+          "pattern": "^[A-Z]{2,3}$",
+          "description": "ISO 3166-1 alpha-2 country code."
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Primary singing language of the song."
+        },
+        "languageCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 10,
+          "pattern": "^[a-zA-Z\\-]+$",
+          "description": "ISO 639-1 language code."
+        },
+        "genre": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Musical genre."
+        },
+        "curatorNote": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Optional note from Joan Manuel about the track."
+        },
+        "thumbnailUrl": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 300,
+          "description": "YouTube thumbnail URL."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "ownerId",
+        "youtubeId",
+        "youtubeUrl",
+        "title",
+        "artist",
+        "country",
+        "countryCode",
+        "language",
+        "languageCode",
+        "genre",
+        "thumbnailUrl",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Photo": {
+      "title": "Photo",
+      "description": "A personal photograph uploaded by Joan Manuel for the top header gallery.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "UID of the owner who uploaded the photo."
+        },
+        "imageData": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 700000,
+          "description": "Resized JPEG data URL or static path."
+        },
+        "caption": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Optional caption for the photo."
+        },
+        "order": {
+          "type": "number",
+          "description": "Display order index."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "ownerId",
+        "imageData",
+        "caption",
+        "order",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SiteConfig": {
+      "title": "SiteConfig",
+      "description": "Owner preferences controlling whether default showcase examples are hidden.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "UID of the owner."
+        },
+        "hiddenSeedTrackIds": {
+          "type": "array",
+          "description": "IDs of default example tracks hidden by the owner."
+        },
+        "hiddenSeedPhotoIds": {
+          "type": "array",
+          "description": "IDs of default example photos hidden by the owner."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "ownerId",
+        "hiddenSeedTrackIds",
+        "hiddenSeedPhotoIds",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/tracks/{trackId}": {
+      "schema": {
+        "$ref": "#/entities/Track"
+      },
+      "description": "Publicly readable music tracks curated exclusively by Joan Manuel."
+    },
+    "/photos/{photoId}": {
+      "schema": {
+        "$ref": "#/entities/Photo"
+      },
+      "description": "Publicly readable top gallery photos uploaded exclusively by Joan Manuel."
+    },
+    "/siteConfig/{configId}": {
+      "schema": {
+        "$ref": "#/entities/SiteConfig"
+      },
+      "description": "Owner preferences document (main) controlling visibility of default showcase items."
+    }
+  }
+}

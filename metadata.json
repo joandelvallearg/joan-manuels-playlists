@@ -1,0 +1,6 @@
+{
+  "name": "Joan Manuel Sebastian Del Valle — Música del Mundo",
+  "description": "Hola, me llamo Joan Manuel Sebastian Del Valle - Te comparto mis gustos musicales, espero que algo te guste.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

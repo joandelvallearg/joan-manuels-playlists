@@ -1,0 +1,429 @@
+import 'dotenv/config';
+import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const PORT = Number(process.env.PORT || 3000);
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    },
+  },
+});
+
+interface TranslationResponsePayload {
+  transliteratedName: string;
+  scriptLabel: string;
+  translatedUi: Record<string, string>;
+  translatedTerms: Record<string, string>;
+  quotaFallback?: boolean;
+}
+
+const serverTranslationCache = new Map<string, TranslationResponsePayload>();
+
+function isQuotaError(err: unknown): boolean {
+  const text = err instanceof Error ? err.message : String(err);
+  return text.includes('429') || text.includes('RESOURCE_EXHAUSTED') || text.toLowerCase().includes('quota');
+}
+
+function extractYouTubeIdServer(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  if (host === 'youtu.be') {
+    const candidate = parsed.pathname.split('/').filter(Boolean)[0] ?? '';
+    return /^[a-zA-Z0-9_-]{11}$/.test(candidate) ? candidate : null;
+  }
+
+  if (
+    host === 'youtube.com' ||
+    host === 'm.youtube.com' ||
+    host === 'music.youtube.com' ||
+    host === 'youtube-nocookie.com'
+  ) {
+    const vParam = parsed.searchParams.get('v');
+    if (vParam && /^[a-zA-Z0-9_-]{11}$/.test(vParam)) return vParam;
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    if (
+      parts.length >= 2 &&
+      (parts[0] === 'embed' || parts[0] === 'shorts' || parts[0] === 'live' || parts[0] === 'v')
+    ) {
+      const candidate = parts[1];
+      return /^[a-zA-Z0-9_-]{11}$/.test(candidate) ? candidate : null;
+    }
+  }
+  return null;
+}
+
+function splitArtistAndTitle(rawTitle?: string, rawAuthor?: string): { title: string; artist: string } {
+  const cleanTitle = (rawTitle || '').trim();
+  const cleanAuthor = (rawAuthor || '').replace(/\s*-\s*Topic$/i, '').trim();
+
+  if (cleanTitle.includes(' - ')) {
+    const [left, ...rest] = cleanTitle.split(' - ');
+    const right = rest.join(' - ').replace(/\s*\(Official.*?\)\s*/gi, '').trim();
+    if (left.trim() && right) {
+      return { artist: left.trim(), title: right };
+    }
+  }
+
+  return {
+    title: cleanTitle.replace(/\s*\(Official.*?\)\s*/gi, '').trim() || 'Canción sin título',
+    artist: cleanAuthor || 'Artista',
+  };
+}
+
+async function fetchYouTubeOEmbed(youtubeId: string): Promise<{ title?: string; author_name?: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const target = `https://www.youtube.com/watch?v=${encodeURIComponent(youtubeId)}`;
+    const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(target)}&format=json`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) return {};
+    const json = (await res.json()) as { title?: string; author_name?: string };
+    return json;
+  } catch {
+    return {};
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function callGeminiWithFallback(params: {
+  models: Array<{ model: string; thinkingLevel: ThinkingLevel }>;
+  contents: string;
+  systemInstruction: string;
+  responseSchema: Record<string, unknown>;
+}): Promise<string> {
+  let lastError: unknown = null;
+  for (const entry of params.models) {
+    try {
+      const response = await ai.models.generateContent({
+        model: entry.model,
+        contents: params.contents,
+        config: {
+          thinkingConfig: { thinkingLevel: entry.thinkingLevel },
+          systemInstruction: params.systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: params.responseSchema,
+        },
+      });
+      return (response.text ?? '{}').trim();
+    } catch (err) {
+      lastError = err;
+      if (!isQuotaError(err)) {
+        throw err;
+      }
+    }
+  }
+  throw lastError ?? new Error('Gemini request failed.');
+}
+
+async function createApp() {
+  const app = express();
+  app.use(express.json({ limit: '1mb' }));
+
+  app.get('/api/health', (_req, res) => {
+    const rawAppUrl = (process.env.SHARED_APP_URL || process.env.APP_URL || '').trim();
+    const publicUrl = rawAppUrl.replace('https://ais-dev-', 'https://ais-pre-');
+    res.json({ ok: true, publicUrl });
+  });
+
+  app.post('/api/analyze-video', async (req, res) => {
+    try {
+      const youtubeUrl = typeof req.body?.youtubeUrl === 'string' ? req.body.youtubeUrl.trim() : '';
+      const youtubeId = extractYouTubeIdServer(youtubeUrl);
+
+      if (!youtubeId) {
+        res.status(400).json({ error: 'Invalid YouTube URL or video ID.' });
+        return;
+      }
+
+      const oembed = await fetchYouTubeOEmbed(youtubeId);
+      const canonicalUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
+      const fallbackSplit = splitArtistAndTitle(oembed.title, oembed.author_name);
+      const thumbnailUrl = `https://i.ytimg.com/vi/${encodeURIComponent(youtubeId)}/hqdefault.jpg`;
+
+      if (!process.env.GEMINI_API_KEY) {
+        res.json({
+          youtubeId,
+          youtubeUrl: canonicalUrl,
+          title: fallbackSplit.title,
+          artist: fallbackSplit.artist,
+          country: 'Argentina',
+          countryCode: 'AR',
+          language: 'Español',
+          languageCode: 'es',
+          genre: 'Pop / Rock',
+          curatorNote: '',
+          thumbnailUrl,
+          aiQuotaExceeded: true,
+        });
+        return;
+      }
+
+      const prompt = [
+        'Analyze this YouTube music video and determine the song details, country of origin of the artist/song, singing language, and musical genre.',
+        `YouTube URL: ${canonicalUrl}`,
+        `YouTube ID: ${youtubeId}`,
+        oembed.title ? `YouTube oEmbed Title: ${oembed.title}` : 'YouTube oEmbed Title: (not available)',
+        oembed.author_name ? `YouTube Channel: ${oembed.author_name}` : 'YouTube Channel: (not available)',
+        'Rules:',
+        '- country: Country name in Spanish (e.g. "Argentina", "Japón", "Francia", "Brasil", "Corea del Sur", "Reino Unido", "Estados Unidos", "Colombia", "España").',
+        '- countryCode: 2-letter uppercase ISO 3166-1 alpha-2 code (e.g. "AR", "JP", "FR", "BR", "KR", "GB", "US", "CO", "ES").',
+        '- language: Primary singing language in Spanish (e.g. "Español", "Japonés", "Francés", "Inglés", "Portugués", "Coreano", "Instrumental").',
+        '- languageCode: 2-letter lowercase ISO 639-1 code (e.g. "es", "ja", "fr", "en", "pt", "ko", "zxx" for instrumental).',
+        '- genre: Concise music genre in Spanish (e.g. "Rock Nacional", "City Pop", "Chanson", "Bossa Nova", "Indie Folk", "Cumbia Psicodélica").',
+        '- curatorNote: A warm 1-sentence editorial note in Spanish about the song or its sound (max 180 chars).',
+      ].join('\n');
+
+      try {
+        const rawJson = await callGeminiWithFallback({
+          models: [
+            { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL },
+            { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW },
+          ],
+          contents: prompt,
+          systemInstruction:
+            'You are a musicologist and ethnomusicology archivist. Identify the song title, artist, country of origin, singing language, and musical genre accurately. Return valid JSON only.',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              artist: { type: Type.STRING },
+              country: { type: Type.STRING },
+              countryCode: { type: Type.STRING },
+              language: { type: Type.STRING },
+              languageCode: { type: Type.STRING },
+              genre: { type: Type.STRING },
+              curatorNote: { type: Type.STRING },
+            },
+            required: ['title', 'artist', 'country', 'countryCode', 'language', 'languageCode', 'genre', 'curatorNote'],
+          },
+        });
+
+        const parsed = JSON.parse(rawJson) as {
+          title?: string;
+          artist?: string;
+          country?: string;
+          countryCode?: string;
+          language?: string;
+          languageCode?: string;
+          genre?: string;
+          curatorNote?: string;
+        };
+
+        const cleanCountryCode = (parsed.countryCode || 'AR').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2) || 'AR';
+        const cleanLangCode = (parsed.languageCode || 'es').toLowerCase().replace(/[^a-z-]/g, '').slice(0, 10) || 'es';
+
+        res.json({
+          youtubeId,
+          youtubeUrl: canonicalUrl,
+          title: (parsed.title || fallbackSplit.title).slice(0, 180),
+          artist: (parsed.artist || fallbackSplit.artist).slice(0, 140),
+          country: (parsed.country || 'Internacional').slice(0, 90),
+          countryCode: cleanCountryCode.length === 2 ? cleanCountryCode : 'AR',
+          language: (parsed.language || 'Español').slice(0, 70),
+          languageCode: cleanLangCode.length >= 2 ? cleanLangCode : 'es',
+          genre: (parsed.genre || 'Música del Mundo').slice(0, 70),
+          curatorNote: (parsed.curatorNote || '').slice(0, 350),
+          thumbnailUrl,
+        });
+      } catch (err) {
+        if (isQuotaError(err)) {
+          res.json({
+            youtubeId,
+            youtubeUrl: canonicalUrl,
+            title: fallbackSplit.title,
+            artist: fallbackSplit.artist,
+            country: 'Argentina',
+            countryCode: 'AR',
+            language: 'Español',
+            languageCode: 'es',
+            genre: 'Pop / Rock',
+            curatorNote: '',
+            thumbnailUrl,
+            aiQuotaExceeded: true,
+          });
+          return;
+        }
+        throw err;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to analyze YouTube video.';
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post('/api/translate', async (req, res) => {
+    try {
+      const targetLanguage = typeof req.body?.targetLanguage === 'string' ? req.body.targetLanguage.trim() : '';
+      const ownerName = typeof req.body?.ownerName === 'string' ? req.body.ownerName.trim() : 'Joan Manuel Sebastian Del Valle';
+      const uiStrings = (req.body?.uiStrings && typeof req.body.uiStrings === 'object' ? req.body.uiStrings : {}) as Record<string, string>;
+      const terms = Array.isArray(req.body?.terms) ? req.body.terms.filter((t: unknown): t is string => typeof t === 'string' && t.trim().length > 0) : [];
+
+      if (!targetLanguage) {
+        res.status(400).json({ error: 'targetLanguage is required.' });
+        return;
+      }
+
+      const cacheKey = JSON.stringify({ targetLanguage, ownerName, uiKeys: Object.keys(uiStrings), terms });
+      const cached = serverTranslationCache.get(cacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        res.json({
+          transliteratedName: ownerName,
+          scriptLabel: targetLanguage,
+          translatedUi: {},
+          translatedTerms: {},
+          quotaFallback: true,
+        });
+        return;
+      }
+
+      const entries = Object.entries(uiStrings).slice(0, 80);
+      const uniqueTerms = Array.from(new Set(terms)).slice(0, 80);
+
+      const prompt = [
+        `Target visitor language code/name: "${targetLanguage}".`,
+        `Owner Spanish full name: "${ownerName}".`,
+        'Task 1: Transliterate the owner\'s Spanish full name phonetically into the natural writing script of the target language.',
+        'Task 2: Translate every UI string from Spanish into the target language naturally and concisely (keep navigation labels 1-3 words).',
+        'Task 3: Translate every music metadata term (genres, captions, notes) from Spanish into the target language.',
+        '',
+        'UI_STRINGS:',
+        JSON.stringify(entries.map(([key, value]) => ({ key, value }))),
+        '',
+        'TERMS:',
+        JSON.stringify(uniqueTerms),
+      ].join('\n');
+
+      try {
+        const rawJson = await callGeminiWithFallback({
+          models: [
+            { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL },
+            { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW },
+          ],
+          contents: prompt,
+          systemInstruction:
+            'You are a precision literary translator and phonetic transliteration specialist. Preserve exact keys and source terms. Return valid JSON only.',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              transliteratedName: { type: Type.STRING },
+              scriptLabel: { type: Type.STRING },
+              translatedUi: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    key: { type: Type.STRING },
+                    value: { type: Type.STRING },
+                  },
+                  required: ['key', 'value'],
+                },
+              },
+              translatedTerms: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    source: { type: Type.STRING },
+                    target: { type: Type.STRING },
+                  },
+                  required: ['source', 'target'],
+                },
+              },
+            },
+            required: ['transliteratedName', 'scriptLabel', 'translatedUi', 'translatedTerms'],
+          },
+        });
+
+        const parsed = JSON.parse(rawJson) as {
+          transliteratedName?: string;
+          scriptLabel?: string;
+          translatedUi?: Array<{ key: string; value: string }>;
+          translatedTerms?: Array<{ source: string; target: string }>;
+        };
+
+        const uiMap: Record<string, string> = {};
+        for (const item of parsed.translatedUi ?? []) {
+          if (item.key && item.value) uiMap[item.key] = item.value;
+        }
+
+        const termsMap: Record<string, string> = {};
+        for (const item of parsed.translatedTerms ?? []) {
+          if (item.source && item.target) termsMap[item.source] = item.target;
+        }
+
+        const result: TranslationResponsePayload = {
+          transliteratedName: parsed.transliteratedName || ownerName,
+          scriptLabel: parsed.scriptLabel || targetLanguage,
+          translatedUi: uiMap,
+          translatedTerms: termsMap,
+        };
+        serverTranslationCache.set(cacheKey, result);
+        res.json(result);
+      } catch (err) {
+        if (isQuotaError(err)) {
+          res.json({
+            transliteratedName: ownerName,
+            scriptLabel: targetLanguage,
+            translatedUi: {},
+            translatedTerms: {},
+            quotaFallback: true,
+          });
+          return;
+        }
+        throw err;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Translation failed.';
+      res.status(500).json({ error: message });
+    }
+  });
+
+  if (!IS_PROD) {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distDir = path.join(__dirname, 'dist');
+    app.use(express.static(distDir));
+    app.get('/{*splat}', (_req, res) => {
+      res.sendFile(path.join(distDir, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  });
+}
+
+createApp();
