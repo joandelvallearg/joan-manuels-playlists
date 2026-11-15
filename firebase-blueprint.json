@@ -44,28 +44,32 @@
         "countryCode": {
           "type": "string",
           "minLength": 2,
-          "maxLength": 3,
-          "pattern": "^[A-Z]{2,3}$",
-          "description": "ISO 3166-1 alpha-2 country code."
+          "maxLength": 7,
+          "pattern": "^[A-Z]{2,3}(,[A-Z]{2,3})?$",
+          "description": "ISO 3166-1 alpha-2 country code (or two comma-separated codes for international remixes)."
         },
         "language": {
           "type": "string",
           "minLength": 1,
           "maxLength": 80,
-          "description": "Primary singing language of the song."
+          "description": "Primary singing language(s) of the song."
         },
         "languageCode": {
           "type": "string",
           "minLength": 2,
-          "maxLength": 10,
-          "pattern": "^[a-zA-Z\\-]+$",
-          "description": "ISO 639-1 language code."
+          "maxLength": 22,
+          "pattern": "^[a-zA-Z\\-]+(,[a-zA-Z\\-]+)?$",
+          "description": "ISO 639-1 language code (or two comma-separated codes for bilingual remixes)."
         },
         "genre": {
           "type": "string",
           "minLength": 1,
           "maxLength": 80,
           "description": "Musical genre."
+        },
+        "isRemix": {
+          "type": "boolean",
+          "description": "True when the track is a remix or bilingual/multi-country collaboration."
         },
         "curatorNote": {
           "type": "string",

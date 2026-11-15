@@ -189,4 +189,40 @@ test('buildFallbackPsychologicalProfile summarizes track countries, languages, a
   assert.ok(formatProfileDate(Date.UTC(2026, 10, 15, 12, 0), 'es').includes('2026'));
 });
 
+test('multi-country and bilingual remixes render two flags, dual translations, and remix filtering', () => {
+  assert.equal(getCountryFlagEmoji('ES,US'), '🇪🇸 🇺🇸');
+  assert.equal(getCountryFlagEmoji('CO,FR'), '🇨🇴 🇫🇷');
+  assert.equal(resolveCountryCode('España / Estados Unidos'), 'ES,US');
+  assert.equal(resolveLanguageCode('Español / Inglés'), 'es,en');
+  assert.equal(translateCountryByCode('ES,US', 'en'), 'Spain / United States');
+  assert.equal(translateLanguageByCode('es,fr', 'en'), 'Spanish / French');
+
+  const remixTrack: Track = {
+    id: 'remix-1',
+    ownerId: 'owner1',
+    youtubeId: 'abc12345678',
+    youtubeUrl: 'https://www.youtube.com/watch?v=abc12345678',
+    title: 'Despacito (Remix)',
+    artist: 'Luis Fonsi & Justin Bieber',
+    country: 'Puerto Rico / Canadá',
+    countryCode: 'PR,CA',
+    language: 'Español / Inglés',
+    languageCode: 'es,en',
+    genre: 'Pop Urbano',
+    isRemix: true,
+    thumbnailUrl: 'https://i.ytimg.com/vi/abc12345678/hqdefault.jpg',
+  };
+
+  const countryGroups = groupTracksByCountry([...SAMPLE_TRACKS, remixTrack]);
+  assert.ok(countryGroups.some((g) => g.code === 'PR,CA' && g.label === 'Puerto Rico / Canadá'));
+
+  const remixMatches = filterTracks([...SAMPLE_TRACKS, remixTrack], {
+    mode: 'all',
+    selectedKey: null,
+    genre: null,
+    query: 'remix',
+  });
+  assert.equal(remixMatches.length, 1);
+  assert.equal(remixMatches[0].id, 'remix-1');
+});
 

@@ -103,6 +103,12 @@ export function StagePlayer({
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-zinc-400">{t('genreLabel')}</dt>
                   <dd className="font-medium text-white text-right">
+                    {activeTrack.isRemix && (
+                      <>
+                        <span className="font-semibold text-blue-400">{t('remixBadge')}</span>
+                        <span aria-hidden="true" className="text-zinc-500"> · </span>
+                      </>
+                    )}
                     {translateTerm(activeTrack.genre)}
                   </dd>
                 </div>

@@ -31,7 +31,16 @@ const serverTranslationCache = new Map<string, TranslationResponsePayload>();
 
 function isQuotaError(err: unknown): boolean {
   const text = err instanceof Error ? err.message : String(err);
-  return text.includes('429') || text.includes('RESOURCE_EXHAUSTED') || text.toLowerCase().includes('quota');
+  const lower = text.toLowerCase();
+  return (
+    text.includes('429') ||
+    text.includes('503') ||
+    text.includes('RESOURCE_EXHAUSTED') ||
+    text.includes('UNAVAILABLE') ||
+    lower.includes('high demand') ||
+    lower.includes('quota') ||
+    lower.includes('timed out')
+  );
 }
 
 function extractYouTubeIdServer(input: string): string | null {
@@ -92,19 +101,35 @@ function splitArtistAndTitle(rawTitle?: string, rawAuthor?: string): { title: st
 
 async function fetchYouTubeOEmbed(youtubeId: string): Promise<{ title?: string; author_name?: string }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const target = `https://www.youtube.com/watch?v=${encodeURIComponent(youtubeId)}`;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const fetchEndpoint = async (endpoint: string): Promise<{ title?: string; author_name?: string }> => {
+    const res = await fetch(endpoint, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as { title?: string; author_name?: string };
+    if (!data?.title && !data?.author_name) throw new Error('Empty metadata');
+    return data;
+  };
+
   try {
-    const target = `https://www.youtube.com/watch?v=${encodeURIComponent(youtubeId)}`;
-    const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(target)}&format=json`, {
-      signal: controller.signal,
+    const raceMetadata = Promise.any([
+      fetchEndpoint(`https://noembed.com/embed?url=${encodeURIComponent(target)}`),
+      fetchEndpoint(`https://www.youtube.com/oembed?url=${encodeURIComponent(target)}&format=json`),
+    ]).catch(() => ({}));
+
+    const timeoutPromise = new Promise<{ title?: string; author_name?: string }>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve({});
+      }, 2500);
     });
-    if (!res.ok) return {};
-    const json = (await res.json()) as { title?: string; author_name?: string };
-    return json;
+
+    return await Promise.race([raceMetadata, timeoutPromise]);
   } catch {
     return {};
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -116,23 +141,36 @@ async function callGeminiWithFallback(params: {
 }): Promise<string> {
   let lastError: unknown = null;
   for (const entry of params.models) {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const response = await ai.models.generateContent({
+      const requestPromise = ai.models.generateContent({
         model: entry.model,
         contents: params.contents,
         config: {
+          abortSignal: controller.signal,
           thinkingConfig: { thinkingLevel: entry.thinkingLevel },
           systemInstruction: params.systemInstruction,
           responseMimeType: 'application/json',
           responseSchema: params.responseSchema,
         },
       });
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error(`Gemini request timed out on ${entry.model}`));
+        }, 12000);
+      });
+      const response = await Promise.race([requestPromise, timeoutPromise]);
       return (response.text ?? '{}').trim();
     } catch (err) {
       lastError = err;
+      console.warn('[Gemini fallback]', entry.model, err instanceof Error ? err.message : String(err));
       if (!isQuotaError(err)) {
         throw err;
       }
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
   throw lastError ?? new Error('Gemini request failed.');
@@ -163,6 +201,7 @@ async function createApp() {
       const thumbnailUrl = `https://i.ytimg.com/vi/${encodeURIComponent(youtubeId)}/hqdefault.jpg`;
 
       if (!process.env.GEMINI_API_KEY) {
+        const isRemixFallback = /\bremix\b/i.test(fallbackSplit.title);
         res.json({
           youtubeId,
           youtubeUrl: canonicalUrl,
@@ -172,7 +211,8 @@ async function createApp() {
           countryCode: 'AR',
           language: 'Español',
           languageCode: 'es',
-          genre: 'Pop / Rock',
+          genre: isRemixFallback ? 'Pop / Rock (Remix)' : 'Pop / Rock',
+          isRemix: isRemixFallback,
           curatorNote: '',
           thumbnailUrl,
           aiQuotaExceeded: true,
@@ -181,17 +221,25 @@ async function createApp() {
       }
 
       const prompt = [
-        'Analyze this YouTube music video and determine the song details, country of origin of the artist/song, singing language, and musical genre.',
+        'Analyze this YouTube music video and determine the song details, country of origin of the artist/song, singing language(s), whether it is a remix or bilingual/international collaboration, and musical genre.',
         `YouTube URL: ${canonicalUrl}`,
         `YouTube ID: ${youtubeId}`,
         oembed.title ? `YouTube oEmbed Title: ${oembed.title}` : 'YouTube oEmbed Title: (not available)',
         oembed.author_name ? `YouTube Channel: ${oembed.author_name}` : 'YouTube Channel: (not available)',
         'Rules:',
-        '- country: Country name in Spanish (e.g. "Argentina", "Japón", "Francia", "Brasil", "Corea del Sur", "Reino Unido", "Estados Unidos", "Colombia", "España").',
-        '- countryCode: 2-letter uppercase ISO 3166-1 alpha-2 code (e.g. "AR", "JP", "FR", "BR", "KR", "GB", "US", "CO", "ES").',
-        '- language: Primary singing language in Spanish (e.g. "Español", "Japonés", "Francés", "Inglés", "Portugués", "Coreano", "Instrumental").',
-        '- languageCode: 2-letter lowercase ISO 639-1 code (e.g. "es", "ja", "fr", "en", "pt", "ko", "zxx" for instrumental).',
-        '- genre: Concise music genre in Spanish (e.g. "Rock Nacional", "City Pop", "Chanson", "Bossa Nova", "Indie Folk", "Cumbia Psicodélica").',
+        '- IMPORTANT FOR COLLABORATIONS / REMIXES / BILINGUAL TRACKS: If the song features singers from TWO different countries OR is sung in TWO different languages (e.g. a remix, duet, or feat. mixing English + Spanish, Russian + French, Puerto Rico + Colombia, etc.), DO NOT force a single country or single language. Instead:',
+        '  1) Set isRemix = true.',
+        '  2) List BOTH countries in "country" separated by " / " in Spanish (e.g. "Puerto Rico / Estados Unidos", "Colombia / Francia").',
+        '  3) List BOTH 2-letter uppercase ISO 3166-1 alpha-2 codes in "countryCode" separated by a comma without spaces (e.g. "PR,US", "CO,FR").',
+        '  4) List BOTH singing languages in "language" separated by " / " in Spanish (e.g. "Español / Inglés", "Español / Francés").',
+        '  5) List BOTH 2-letter lowercase ISO 639-1 codes in "languageCode" separated by a comma without spaces (e.g. "es,en", "es,fr").',
+        '  6) Mention "Remix" in "genre" if appropriate (e.g. "Reggaetón Remix", "Pop Urbano (Remix)").',
+        '- For single-country, single-language songs: set isRemix = false (unless the track itself is clearly a remix), and put 1 country, 1 countryCode ("AR"), 1 language, and 1 languageCode ("es").',
+        '- country: Country name(s) in Spanish (e.g. "Argentina", "Japón", or "España / Estados Unidos" for two countries).',
+        '- countryCode: 1 or 2 uppercase 2-letter ISO 3166-1 alpha-2 codes separated by "," (e.g. "AR" or "ES,US").',
+        '- language: Singing language(s) in Spanish (e.g. "Español", "Japonés", or "Español / Inglés" for two languages, or "Instrumental").',
+        '- languageCode: 1 or 2 lowercase ISO 639-1 codes separated by "," (e.g. "es", "ja", "es,en", or "zxx" for instrumental).',
+        '- genre: Concise music genre in Spanish (e.g. "Rock Nacional", "City Pop", "Chanson", "Pop Urbano (Remix)").',
         '- curatorNote: A warm 1-sentence editorial note in Spanish about the song or its sound (max 180 chars).',
       ].join('\n');
 
@@ -203,7 +251,7 @@ async function createApp() {
           ],
           contents: prompt,
           systemInstruction:
-            'You are a musicologist and ethnomusicology archivist. Identify the song title, artist, country of origin, singing language, and musical genre accurately. Return valid JSON only.',
+            'You are a musicologist and ethnomusicology archivist. Identify the song title, artist, country (or two countries for collaborations/remixes), singing language (or two languages for bilingual tracks), remix status, and musical genre accurately. Return valid JSON only.',
           responseSchema: {
             type: Type.OBJECT,
             properties: {
@@ -214,9 +262,10 @@ async function createApp() {
               language: { type: Type.STRING },
               languageCode: { type: Type.STRING },
               genre: { type: Type.STRING },
+              isRemix: { type: Type.BOOLEAN },
               curatorNote: { type: Type.STRING },
             },
-            required: ['title', 'artist', 'country', 'countryCode', 'language', 'languageCode', 'genre', 'curatorNote'],
+            required: ['title', 'artist', 'country', 'countryCode', 'language', 'languageCode', 'genre', 'isRemix', 'curatorNote'],
           },
         });
 
@@ -228,27 +277,57 @@ async function createApp() {
           language?: string;
           languageCode?: string;
           genre?: string;
+          isRemix?: boolean;
           curatorNote?: string;
         };
 
-        const cleanCountryCode = (parsed.countryCode || 'AR').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2) || 'AR';
-        const cleanLangCode = (parsed.languageCode || 'es').toLowerCase().replace(/[^a-z-]/g, '').slice(0, 10) || 'es';
+        const countryCodes = Array.from(
+          new Set(
+            (parsed.countryCode || 'AR')
+              .split(/[,/;&\s]+/)
+              .map((c) => c.trim().toUpperCase().replace(/[^A-Z]/g, ''))
+              .filter((c) => c.length === 2 || c.length === 3)
+          )
+        ).slice(0, 2);
+        const cleanCountryCode = countryCodes.length > 0 ? countryCodes.join(',') : 'AR';
+
+        const langCodes = Array.from(
+          new Set(
+            (parsed.languageCode || 'es')
+              .split(/[,/;&\s]+/)
+              .map((c) => c.trim().toLowerCase().replace(/[^a-z-]/g, ''))
+              .filter((c) => c.length >= 2 && c.length <= 10)
+          )
+        ).slice(0, 2);
+        const cleanLangCode = langCodes.length > 0 ? langCodes.join(',') : 'es';
+
+        const finalTitle = (parsed.title || fallbackSplit.title).slice(0, 180);
+        const finalGenre = (parsed.genre || 'Música del Mundo').slice(0, 70);
+        const isRemixDetected = Boolean(
+          parsed.isRemix ||
+            countryCodes.length >= 2 ||
+            langCodes.length >= 2 ||
+            /\bremix\b/i.test(finalTitle) ||
+            /\bremix\b/i.test(finalGenre)
+        );
 
         res.json({
           youtubeId,
           youtubeUrl: canonicalUrl,
-          title: (parsed.title || fallbackSplit.title).slice(0, 180),
+          title: finalTitle,
           artist: (parsed.artist || fallbackSplit.artist).slice(0, 140),
           country: (parsed.country || 'Internacional').slice(0, 90),
-          countryCode: cleanCountryCode.length === 2 ? cleanCountryCode : 'AR',
+          countryCode: cleanCountryCode,
           language: (parsed.language || 'Español').slice(0, 70),
-          languageCode: cleanLangCode.length >= 2 ? cleanLangCode : 'es',
-          genre: (parsed.genre || 'Música del Mundo').slice(0, 70),
+          languageCode: cleanLangCode,
+          genre: finalGenre,
+          isRemix: isRemixDetected,
           curatorNote: (parsed.curatorNote || '').slice(0, 350),
           thumbnailUrl,
         });
       } catch (err) {
         if (isQuotaError(err)) {
+          const isRemixFallback = /\bremix\b/i.test(fallbackSplit.title);
           res.json({
             youtubeId,
             youtubeUrl: canonicalUrl,
@@ -258,7 +337,8 @@ async function createApp() {
             countryCode: 'AR',
             language: 'Español',
             languageCode: 'es',
-            genre: 'Pop / Rock',
+            genre: isRemixFallback ? 'Pop / Rock (Remix)' : 'Pop / Rock',
+            isRemix: isRemixFallback,
             curatorNote: '',
             thumbnailUrl,
             aiQuotaExceeded: true,

@@ -58,7 +58,9 @@ import {
   groupTracksByCountry,
   groupTracksByLanguage,
   isPrivateDevUrl,
+  normalizeCountryCodesList,
   normalizeLanguageCode,
+  normalizeLanguageCodesList,
   resolvePublicShareUrl,
   translateCountryByCode,
   translateLanguageByCode,
@@ -151,6 +153,7 @@ export default function App() {
             language: String(data.language ?? ''),
             languageCode: String(data.languageCode ?? 'es'),
             genre: String(data.genre ?? ''),
+            isRemix: Boolean(data.isRemix),
             curatorNote: data.curatorNote ? String(data.curatorNote) : undefined,
             thumbnailUrl: String(data.thumbnailUrl ?? ''),
           };
@@ -509,6 +512,16 @@ export default function App() {
   const handlePublishTrack = async (video: AnalyzedVideoResult) => {
     if (!user || !isOwner) throw new Error('Solo Joan Manuel puede publicar canciones.');
     try {
+      const normalizedCountryCode = normalizeCountryCodesList(video.countryCode, 'AR');
+      const normalizedLangCode = normalizeLanguageCodesList(video.languageCode, 'es');
+      const isRemix = Boolean(
+        video.isRemix ||
+          normalizedCountryCode.includes(',') ||
+          normalizedLangCode.includes(',') ||
+          /\bremix\b/i.test(video.title) ||
+          /\bremix\b/i.test(video.genre)
+      );
+
       const docRef = await addDoc(collection(db, 'tracks'), {
         ownerId: user.uid,
         youtubeId: video.youtubeId,
@@ -516,10 +529,11 @@ export default function App() {
         title: video.title,
         artist: video.artist,
         country: video.country,
-        countryCode: video.countryCode.toUpperCase().slice(0, 2),
+        countryCode: normalizedCountryCode,
         language: video.language,
-        languageCode: video.languageCode.toLowerCase().slice(0, 10),
+        languageCode: normalizedLangCode,
         genre: video.genre,
+        isRemix,
         curatorNote: video.curatorNote || '',
         thumbnailUrl: video.thumbnailUrl,
         createdAt: serverTimestamp(),

@@ -1,7 +1,7 @@
 import { Globe2, Languages, ListMusic, Play, Plus, Search, Trash2, Volume2 } from 'lucide-react';
 import type { UiStringKey } from '../data/translations';
 import type { PlaylistGroup, PlaylistMode, Track } from '../types';
-import { getCountryFlagEmoji } from '../utils/musicLogic';
+import { formatCodesDisplay, getCountryFlagEmoji } from '../utils/musicLogic';
 
 interface PlaylistExplorerProps {
   t: (key: UiStringKey) => string;
@@ -186,7 +186,9 @@ export function PlaylistExplorer({
                   </button>
 
                   <div className="flex items-center justify-between gap-3 border-t border-zinc-200/80 pt-3">
-                    <span className="font-mono text-xs text-zinc-500 uppercase">{group.code}</span>
+                    <span className="font-mono text-xs text-zinc-500 uppercase">
+                      {formatCodesDisplay(group.code)}
+                    </span>
                     <button
                       type="button"
                       onClick={() => onPlayPlaylist(group)}
@@ -324,7 +326,13 @@ export function PlaylistExplorer({
                           </dd>
                         </div>
                         <div className="col-span-2 pt-1 text-zinc-500 truncate">
-                          {translateTerm(track.genre)}
+                          {track.isRemix && (
+                            <>
+                              <span className="font-semibold text-blue-700">{t('remixBadge')}</span>
+                              <span aria-hidden="true"> · </span>
+                            </>
+                          )}
+                          <span>{translateTerm(track.genre)}</span>
                         </div>
                       </dl>
                     </div>

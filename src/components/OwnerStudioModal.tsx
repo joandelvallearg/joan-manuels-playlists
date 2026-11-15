@@ -6,6 +6,7 @@ import { OWNER_EMAIL, type AnalyzedVideoResult } from '../types';
 import { compressImageToDataUrl } from '../utils/imageHelper';
 import {
   extractYouTubeId,
+  getCountryFlagEmoji,
   getYouTubeThumbnailUrl,
   resolveCountryCode,
   resolveLanguageCode,
@@ -83,6 +84,7 @@ export function OwnerStudioModal({
       // Ignore network fallback failure and let owner fill manually
     }
 
+    const isRemixFallback = /\bremix\b/i.test(title);
     return {
       youtubeId: id,
       youtubeUrl: canonicalUrl,
@@ -92,7 +94,8 @@ export function OwnerStudioModal({
       countryCode: 'AR',
       language: 'Español',
       languageCode: 'es',
-      genre: 'Pop / Rock',
+      genre: isRemixFallback ? 'Pop / Rock (Remix)' : 'Pop / Rock',
+      isRemix: isRemixFallback,
       curatorNote: '',
       thumbnailUrl: getYouTubeThumbnailUrl(id),
       aiQuotaExceeded: true,
@@ -155,6 +158,7 @@ export function OwnerStudioModal({
       language: 'Español',
       languageCode: 'es',
       genre: 'Rock Nacional',
+      isRemix: false,
       curatorNote: '',
       thumbnailUrl: getYouTubeThumbnailUrl(id),
     });
@@ -416,19 +420,25 @@ export function OwnerStudioModal({
                         </div>
                         <div>
                           <label htmlFor="analyzed-country" className="block text-xs font-medium text-zinc-700 mb-1">
-                            {t('countryLabel')}
+                            {t('countryLabel')}{' '}
+                            <span aria-hidden="true" className="ml-1">
+                              {getCountryFlagEmoji(analyzed.countryCode)}
+                            </span>
                           </label>
                           <input
                             id="analyzed-country"
                             type="text"
                             required
+                            placeholder="Ej: España / Estados Unidos"
                             value={analyzed.country}
                             onChange={(e) => {
                               const nextCountry = e.target.value;
+                              const nextCode = resolveCountryCode(nextCountry, analyzed.countryCode);
                               setAnalyzed({
                                 ...analyzed,
                                 country: nextCountry,
-                                countryCode: resolveCountryCode(nextCountry, analyzed.countryCode),
+                                countryCode: nextCode,
+                                isRemix: Boolean(analyzed.isRemix || nextCode.includes(',')),
                               });
                             }}
                             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
@@ -442,13 +452,16 @@ export function OwnerStudioModal({
                             id="analyzed-language"
                             type="text"
                             required
+                            placeholder="Ej: Español / Inglés"
                             value={analyzed.language}
                             onChange={(e) => {
                               const nextLang = e.target.value;
+                              const nextLangCode = resolveLanguageCode(nextLang, analyzed.languageCode);
                               setAnalyzed({
                                 ...analyzed,
                                 language: nextLang,
-                                languageCode: resolveLanguageCode(nextLang, analyzed.languageCode),
+                                languageCode: nextLangCode,
+                                isRemix: Boolean(analyzed.isRemix || nextLangCode.includes(',')),
                               });
                             }}
                             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
@@ -466,6 +479,17 @@ export function OwnerStudioModal({
                             onChange={(e) => setAnalyzed({ ...analyzed, genre: e.target.value })}
                             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
                           />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="flex items-center gap-2.5 text-xs font-medium text-zinc-800 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(analyzed.isRemix)}
+                              onChange={(e) => setAnalyzed({ ...analyzed, isRemix: e.target.checked })}
+                              className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-600"
+                            />
+                            <span>{t('remixToggleLabel')}</span>
+                          </label>
                         </div>
                         <div className="sm:col-span-2">
                           <label htmlFor="analyzed-note" className="block text-xs font-medium text-zinc-700 mb-1">

@@ -86,11 +86,11 @@ export function PhotoGallerySection({
   return (
     <section id="photos" className="scroll-mt-20 border-t border-zinc-200 bg-[#F6F7F9]">
       <div className="mx-auto max-w-6xl px-6 py-12">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start lg:gap-10">
           {/* Left column: Joan Manuel's Photos */}
-          <div className="lg:col-span-6 space-y-5">
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="font-display text-2xl font-bold tracking-tight text-zinc-950">
+          <div className="lg:col-span-5 space-y-5">
+            <div className="flex min-h-[2.25rem] items-center justify-between gap-4">
+              <h2 className="font-display text-2xl sm:text-[1.75rem] font-bold tracking-tight text-zinc-950">
                 {t('photosHeading')}
               </h2>
               {isOwner && (
@@ -140,7 +140,7 @@ export function PhotoGallerySection({
                         src={photo.imageData}
                         alt={photo.caption || OWNER_SPANISH_NAME}
                         referrerPolicy="no-referrer"
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                        className="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]"
                       />
                       {photo.caption && (
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent p-4 pt-10">
@@ -167,9 +167,9 @@ export function PhotoGallerySection({
           </div>
 
           {/* Right column: AI Psychological & Musical Taste Profile */}
-          <div className="lg:col-span-6 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-display text-2xl font-bold tracking-tight text-zinc-950">
+          <div className="lg:col-span-7 space-y-5">
+            <div className="flex min-h-[2.25rem] flex-wrap items-center justify-between gap-3">
+              <h2 className="font-display text-2xl sm:text-[1.75rem] font-bold tracking-tight text-zinc-950 text-balance">
                 {t('profileHeading')}
               </h2>
               {isOwner && (
@@ -177,7 +177,7 @@ export function PhotoGallerySection({
                   type="button"
                   disabled={!hasAnyTracks || generating}
                   onClick={handleGenerateClick}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{generating ? t('profileGeneratingBtn') : t('profileGenerateBtn')}</span>
@@ -185,7 +185,7 @@ export function PhotoGallerySection({
               )}
             </div>
 
-            <div className="rounded-2xl border border-zinc-200 bg-white p-6 space-y-5">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-6 sm:p-8 space-y-6">
               {profileError && (
                 <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                   {profileError}
@@ -200,17 +200,21 @@ export function PhotoGallerySection({
 
               {/* Owner Draft Editing & Save Mode */}
               {isOwner && draft ? (
-                <div className="space-y-4">
+                <div className="space-y-5">
+                  <p className="border-b border-zinc-100 pb-3 text-xs font-medium text-zinc-600">
+                    {t('profileAiNotice')}
+                  </p>
+
                   {draft.aiQuotaExceeded && (
                     <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 leading-relaxed">
                       {t('profileQuotaNotice')}
                     </p>
                   )}
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <label
                       htmlFor="profile-personality-input"
-                      className="block text-xs font-semibold text-zinc-700"
+                      className="block font-display text-lg font-semibold tracking-tight text-zinc-900"
                     >
                       {t('profilePersonalityLabel')}
                     </label>
@@ -224,10 +228,10 @@ export function PhotoGallerySection({
                     />
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <label
                       htmlFor="profile-taste-input"
-                      className="block text-xs font-semibold text-zinc-700"
+                      className="block font-display text-lg font-semibold tracking-tight text-zinc-900"
                     >
                       {t('profileTasteLabel')}
                     </label>
@@ -241,10 +245,10 @@ export function PhotoGallerySection({
                     />
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <label
                       htmlFor="profile-traits-input"
-                      className="block text-xs font-semibold text-zinc-700"
+                      className="block font-display text-lg font-semibold tracking-tight text-zinc-900"
                     >
                       {t('profileTraitsLabel')}
                     </label>
@@ -290,60 +294,68 @@ export function PhotoGallerySection({
                   </div>
                 </div>
               ) : savedProfile ? (
-                <div className="space-y-5">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500 border-b border-zinc-100 pb-3">
-                    {formattedUpdatedDate && (
-                      <>
-                        <span>
-                          {t('profileUpdatedAt')} {formattedUpdatedDate}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                      </>
-                    )}
-                    <span className="font-mono tabular-nums">
-                      {t('profileBasedOnSongs')} {savedProfile.trackCount}{' '}
-                      {savedProfile.trackCount === 1 ? t('songsCountSingle') : t('songsCountPlural')}
-                    </span>
+                <div className="space-y-6">
+                  <div className="space-y-1.5 border-b border-zinc-100 pb-4">
+                    <p className="text-xs font-medium text-blue-700">
+                      {t('profileAiNotice')}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-zinc-500">
+                      {formattedUpdatedDate && (
+                        <>
+                          <span>
+                            {t('profileUpdatedAt')} {formattedUpdatedDate}
+                          </span>
+                          <span aria-hidden="true">·</span>
+                        </>
+                      )}
+                      <span className="font-mono tabular-nums">
+                        {t('profileBasedOnSongs')} {savedProfile.trackCount}{' '}
+                        {savedProfile.trackCount === 1 ? t('songsCountSingle') : t('songsCountPlural')}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <h3 className="text-xs font-semibold tracking-wide text-zinc-500">
+                  <article className="space-y-2">
+                    <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance">
                       {t('profilePersonalityLabel')}
                     </h3>
-                    <p className="text-sm text-zinc-800 leading-relaxed">
+                    <p className="text-[15px] text-zinc-700 leading-[1.65]">
                       {translateTerm(savedProfile.personalitySummary)}
                     </p>
-                  </div>
+                  </article>
 
-                  <div className="space-y-1.5">
-                    <h3 className="text-xs font-semibold tracking-wide text-zinc-500">
+                  <article className="space-y-2 border-t border-zinc-100 pt-5">
+                    <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance">
                       {t('profileTasteLabel')}
                     </h3>
-                    <p className="text-sm text-zinc-800 leading-relaxed">
+                    <p className="text-[15px] text-zinc-700 leading-[1.65]">
                       {translateTerm(savedProfile.musicalTasteSummary)}
                     </p>
-                  </div>
+                  </article>
 
                   {savedProfile.keyTraits.length > 0 && (
-                    <div className="space-y-2 border-t border-zinc-100 pt-4">
-                      <h3 className="text-xs font-semibold tracking-wide text-zinc-500">
+                    <article className="space-y-3 border-t border-zinc-100 pt-5">
+                      <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance">
                         {t('profileTraitsLabel')}
                       </h3>
-                      <ul className="space-y-1.5 text-xs font-medium text-zinc-700">
+                      <ul className="grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2 text-sm font-medium text-zinc-800">
                         {savedProfile.keyTraits.map((trait, idx) => (
-                          <li key={idx} className="flex items-baseline gap-2">
-                            <span className="font-mono text-blue-600" aria-hidden="true">
-                              ·
+                          <li key={idx} className="flex items-baseline gap-2.5">
+                            <span className="font-mono text-blue-600 shrink-0" aria-hidden="true">
+                              —
                             </span>
-                            <span>{translateTerm(trait)}</span>
+                            <span className="leading-snug">{translateTerm(trait)}</span>
                           </li>
                         ))}
                       </ul>
-                    </div>
+                    </article>
                   )}
                 </div>
               ) : (
-                <div className="py-6 text-center space-y-2">
+                <div className="py-5 text-center space-y-2">
+                  <p className="text-xs font-medium text-blue-700">
+                    {t('profileAiNotice')}
+                  </p>
                   <p className="text-sm text-zinc-600 leading-relaxed">
                     {isOwner ? t('profileEmptyOwner') : t('profileEmptyVisitor')}
                   </p>

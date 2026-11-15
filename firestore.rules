@@ -36,7 +36,7 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'ownerId', 'youtubeId', 'youtubeUrl', 'title', 'artist',
           'country', 'countryCode', 'language', 'languageCode',
-          'genre', 'curatorNote', 'thumbnailUrl', 'createdAt', 'updatedAt'
+          'genre', 'isRemix', 'curatorNote', 'thumbnailUrl', 'createdAt', 'updatedAt'
         ])
         && data.ownerId is string
         && data.ownerId.size() > 0 && data.ownerId.size() <= 128
@@ -53,15 +53,16 @@ service cloud.firestore {
         && data.country is string
         && data.country.size() >= 1 && data.country.size() <= 100
         && data.countryCode is string
-        && data.countryCode.size() >= 2 && data.countryCode.size() <= 3
-        && data.countryCode.matches('^[A-Z]{2,3}$')
+        && data.countryCode.size() >= 2 && data.countryCode.size() <= 7
+        && data.countryCode.matches('^[A-Z]{2,3}(,[A-Z]{2,3})?$')
         && data.language is string
         && data.language.size() >= 1 && data.language.size() <= 80
         && data.languageCode is string
-        && data.languageCode.size() >= 2 && data.languageCode.size() <= 10
-        && data.languageCode.matches('^[a-zA-Z\\-]+$')
+        && data.languageCode.size() >= 2 && data.languageCode.size() <= 22
+        && data.languageCode.matches('^[a-zA-Z\\-]+(,[a-zA-Z\\-]+)?$')
         && data.genre is string
         && data.genre.size() >= 1 && data.genre.size() <= 80
+        && (!data.keys().hasAny(['isRemix']) || data.isRemix is bool)
         && (!data.keys().hasAny(['curatorNote']) || (data.curatorNote is string && data.curatorNote.size() <= 400))
         && data.thumbnailUrl is string
         && data.thumbnailUrl.size() >= 10 && data.thumbnailUrl.size() <= 300
@@ -154,7 +155,7 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'title', 'artist', 'country', 'countryCode',
-          'language', 'languageCode', 'genre', 'curatorNote', 'updatedAt'
+          'language', 'languageCode', 'genre', 'isRemix', 'curatorNote', 'updatedAt'
         ]);
       allow delete: if isOwnerUser() && isValidId(trackId);
     }

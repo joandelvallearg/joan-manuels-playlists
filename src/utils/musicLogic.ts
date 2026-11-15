@@ -62,12 +62,48 @@ export function getYouTubeThumbnailUrl(youtubeId: string): string {
   return `https://i.ytimg.com/vi/${encodeURIComponent(youtubeId)}/hqdefault.jpg`;
 }
 
-export function getCountryFlagEmoji(countryCode: string): string {
-  const clean = countryCode.trim().toUpperCase();
+export function normalizeCountryCodesList(rawCode: string, fallback = 'AR'): string {
+  const parts = rawCode
+    .split(/[,/;&\s]+/)
+    .map((p) => p.trim().toUpperCase().replace(/[^A-Z]/g, ''))
+    .filter((p) => p.length === 2 || p.length === 3);
+  const unique = Array.from(new Set(parts)).slice(0, 2);
+  return unique.length > 0 ? unique.join(',') : fallback;
+}
+
+export function normalizeLanguageCodesList(rawCode: string, fallback = 'es'): string {
+  const parts = rawCode
+    .split(/[,/;&\s]+/)
+    .map((p) => p.trim().toLowerCase().replace(/[^a-z-]/g, ''))
+    .filter((p) => p.length >= 2 && p.length <= 10);
+  const unique = Array.from(new Set(parts)).slice(0, 2);
+  return unique.length > 0 ? unique.join(',') : fallback;
+}
+
+export function formatCodesDisplay(rawCode: string): string {
+  return rawCode
+    .split(/[,/]+/)
+    .map((p) => p.trim().toUpperCase())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' / ');
+}
+
+function singleCountryFlagEmoji(code: string): string {
+  const clean = code.trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(clean)) return '';
   const first = clean.codePointAt(0)! - 65 + 0x1f1e6;
   const second = clean.codePointAt(1)! - 65 + 0x1f1e6;
   return String.fromCodePoint(first, second);
+}
+
+export function getCountryFlagEmoji(countryCode: string): string {
+  const flags = countryCode
+    .split(/[,/;&\s]+/)
+    .map(singleCountryFlagEmoji)
+    .filter(Boolean)
+    .slice(0, 2);
+  return flags.join(' ');
 }
 
 export function groupTracksByCountry(tracks: Track[]): PlaylistGroup[] {
@@ -151,7 +187,8 @@ export function filterTracks(
     }
 
     if (q) {
-      const haystack = `${track.title} ${track.artist} ${track.country} ${track.language} ${track.genre}`.toLowerCase();
+      const remixToken = track.isRemix ? 'remix' : '';
+      const haystack = `${track.title} ${track.artist} ${track.country} ${track.language} ${track.genre} ${remixToken}`.toLowerCase();
       if (!haystack.includes(q)) return false;
     }
 
@@ -174,25 +211,41 @@ export function normalizeLanguageCode(rawLang: string | undefined | null): strin
 }
 
 export function translateCountryByCode(countryCode: string, targetLang: string): string | null {
-  const code = countryCode.trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(code)) return null;
+  const codes = countryCode
+    .split(/[,/;&\s]+/)
+    .map((c) => c.trim().toUpperCase())
+    .filter((c) => /^[A-Z]{2}$/.test(c))
+    .slice(0, 2);
+  if (codes.length === 0) return null;
   try {
     const dn = new Intl.DisplayNames([targetLang], { type: 'region' });
-    const label = dn.of(code);
-    return label && label !== code ? label : null;
+    const labels = codes.map((code) => {
+      const label = dn.of(code);
+      return label && label !== code ? label : null;
+    });
+    if (labels.some((l) => !l)) return null;
+    return labels.join(' / ');
   } catch {
     return null;
   }
 }
 
 export function translateLanguageByCode(languageCode: string, targetLang: string): string | null {
-  const code = languageCode.trim().toLowerCase();
-  if (!code || code === 'zxx') return null;
+  const codes = languageCode
+    .split(/[,/;&\s]+/)
+    .map((c) => c.trim().toLowerCase())
+    .filter((c) => c && c !== 'zxx')
+    .slice(0, 2);
+  if (codes.length === 0) return null;
   try {
     const dn = new Intl.DisplayNames([targetLang], { type: 'language' });
-    const label = dn.of(code);
-    if (!label || label === code) return null;
-    return label.charAt(0).toUpperCase() + label.slice(1);
+    const labels = codes.map((code) => {
+      const label = dn.of(code);
+      if (!label || label === code) return null;
+      return label.charAt(0).toUpperCase() + label.slice(1);
+    });
+    if (labels.some((l) => !l)) return null;
+    return labels.join(' / ');
   } catch {
     return null;
   }
@@ -297,17 +350,37 @@ const LANGUAGE_NAME_TO_CODE: Record<string, string> = {
 };
 
 export function resolveCountryCode(countryName: string, fallback = 'UN'): string {
-  const key = countryName.trim().toLowerCase();
-  if (!key) return fallback;
-  if (COUNTRY_NAME_TO_CODE[key]) return COUNTRY_NAME_TO_CODE[key];
-  return fallback;
+  const parts = countryName
+    .split(/\s*[,\/&]\s*|\s+y\s+/i)
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 2);
+  if (parts.length === 0) return fallback;
+  const resolved = parts
+    .map((key) => COUNTRY_NAME_TO_CODE[key])
+    .filter((code): code is string => Boolean(code));
+  const unique = Array.from(new Set(resolved));
+  if (unique.length === parts.length && unique.length > 0) {
+    return unique.join(',');
+  }
+  return unique[0] || fallback;
 }
 
 export function resolveLanguageCode(languageName: string, fallback = 'und'): string {
-  const key = languageName.trim().toLowerCase();
-  if (!key) return fallback;
-  if (LANGUAGE_NAME_TO_CODE[key]) return LANGUAGE_NAME_TO_CODE[key];
-  return fallback;
+  const parts = languageName
+    .split(/\s*[,\/&]\s*|\s+y\s+/i)
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 2);
+  if (parts.length === 0) return fallback;
+  const resolved = parts
+    .map((key) => LANGUAGE_NAME_TO_CODE[key])
+    .filter((code): code is string => Boolean(code));
+  const unique = Array.from(new Set(resolved));
+  if (unique.length === parts.length && unique.length > 0) {
+    return unique.join(',');
+  }
+  return unique[0] || fallback;
 }
 
 export function isPrivateDevUrl(rawUrl: string): boolean {

@@ -16,6 +16,7 @@ export interface Track {
   language: string;
   languageCode: string;
   genre: string;
+  isRemix?: boolean;
   curatorNote?: string;
   thumbnailUrl: string;
   isSeed?: boolean;
@@ -62,6 +63,7 @@ export interface AnalyzedVideoResult {
   language: string;
   languageCode: string;
   genre: string;
+  isRemix?: boolean;
   curatorNote: string;
   thumbnailUrl: string;
   aiQuotaExceeded?: boolean;
