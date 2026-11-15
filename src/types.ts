@@ -1,5 +1,6 @@
 export const OWNER_EMAIL = 'joandelvallearg@gmail.com';
 export const OWNER_SPANISH_NAME = 'Joan Manuel Sebastian Del Valle';
+export const PUBLIC_SHARE_URL = 'https://joan-manuels-playlists.vercel.app/';
 
 export type PlaylistMode = 'country' | 'language' | 'all';
 
@@ -65,3 +66,22 @@ export interface AnalyzedVideoResult {
   thumbnailUrl: string;
   aiQuotaExceeded?: boolean;
 }
+
+export interface PsychologicalProfile {
+  ownerId: string;
+  personalitySummary: string;
+  musicalTasteSummary: string;
+  keyTraits: string[];
+  trackCount: number;
+  createdAtMs?: number;
+  updatedAtMs?: number;
+}
+
+export interface GeneratedProfileDraft {
+  personalitySummary: string;
+  musicalTasteSummary: string;
+  keyTraits: string[];
+  trackCount: number;
+  aiQuotaExceeded?: boolean;
+}
+

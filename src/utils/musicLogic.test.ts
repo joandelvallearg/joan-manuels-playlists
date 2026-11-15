@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildFallbackPsychologicalProfile,
   extractYouTubeId,
   filterTracks,
+  formatProfileDate,
   getCountryFlagEmoji,
   getYouTubeEmbedUrl,
   groupTracksByCountry,
@@ -161,24 +163,30 @@ test('resolveCountryCode and resolveLanguageCode map common names to ISO codes',
   assert.equal(resolveLanguageCode('Francés'), 'fr');
 });
 
-test('resolvePublicShareUrl converts ais-dev preview URLs to public ais-pre URLs and falls back on localhost', () => {
+test('resolvePublicShareUrl defaults to published Vercel URL and supports custom override', () => {
   assert.equal(
     resolvePublicShareUrl('https://ais-dev-abc123.us-west2.run.app/'),
-    'https://ais-pre-abc123.us-west2.run.app/'
+    'https://joan-manuels-playlists.vercel.app/'
   );
   assert.equal(
-    resolvePublicShareUrl('https://ais-pre-abc123.us-west2.run.app/'),
-    'https://ais-pre-abc123.us-west2.run.app/'
-  );
-  assert.equal(
-    resolvePublicShareUrl('http://localhost:3000/', 'https://ais-dev-abc123.us-west2.run.app'),
-    'https://ais-pre-abc123.us-west2.run.app/'
+    resolvePublicShareUrl('http://localhost:3000/', 'https://joan-manuels-playlists.vercel.app/'),
+    'https://joan-manuels-playlists.vercel.app/'
   );
   assert.equal(
     resolvePublicShareUrl('https://ais-dev-abc123.us-west2.run.app/', '', 'https://musica.joandelvalle.com'),
     'https://musica.joandelvalle.com/'
   );
   assert.equal(isPrivateDevUrl('https://ais-dev-abc123.us-west2.run.app/'), true);
-  assert.equal(isPrivateDevUrl('https://ais-pre-abc123.us-west2.run.app/'), false);
+  assert.equal(isPrivateDevUrl('https://joan-manuels-playlists.vercel.app/'), false);
 });
+
+test('buildFallbackPsychologicalProfile summarizes track countries, languages, and genres', () => {
+  const draft = buildFallbackPsychologicalProfile(SAMPLE_TRACKS);
+  assert.equal(draft.trackCount, 3);
+  assert.ok(draft.personalitySummary.includes('Argentina'));
+  assert.ok(draft.musicalTasteSummary.includes('Soda Stereo'));
+  assert.ok(draft.keyTraits.length >= 3 && draft.keyTraits.length <= 5);
+  assert.ok(formatProfileDate(Date.UTC(2026, 10, 15, 12, 0), 'es').includes('2026'));
+});
+
 

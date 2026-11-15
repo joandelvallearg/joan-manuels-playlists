@@ -1,4 +1,4 @@
-import type { PlaylistGroup, PlaylistMode, Track } from '../types';
+import type { GeneratedProfileDraft, PlaylistGroup, PlaylistMode, Track } from '../types';
 
 const YOUTUBE_ID_REGEX = /^[a-zA-Z0-9_-]{11}$/;
 
@@ -339,7 +339,7 @@ export function toPublicShareUrl(rawUrl: string): string {
 }
 
 export function resolvePublicShareUrl(
-  currentHref: string,
+  _currentHref: string,
   serverPublicUrl?: string,
   customUrl?: string
 ): string {
@@ -349,25 +349,80 @@ export function resolvePublicShareUrl(
       const parsedCustom = new URL(custom.startsWith('http') ? custom : `https://${custom}`);
       return toPublicShareUrl(`${parsedCustom.origin}${parsedCustom.pathname || '/'}`);
     } catch {
-      // Ignore invalid custom URL and fall through to automatic detection
+      // Ignore invalid custom URL and fall through to published public URL
     }
   }
 
-  if (currentHref) {
-    try {
-      const parsed = new URL(currentHref);
-      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
-        if (serverPublicUrl) {
-          return toPublicShareUrl(serverPublicUrl);
-        }
-      }
-      return toPublicShareUrl(`${parsed.origin}${parsed.pathname || '/'}`);
-    } catch {
-      // Ignore invalid currentHref
-    }
-  }
-
-  return serverPublicUrl ? toPublicShareUrl(serverPublicUrl) : '';
+  return serverPublicUrl || 'https://joan-manuels-playlists.vercel.app/';
 }
+
+export function formatProfileDate(timestampMs: number | undefined, langCode: string): string {
+  if (!timestampMs || !Number.isFinite(timestampMs)) return '';
+  try {
+    return new Intl.DateTimeFormat(langCode || 'es', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(timestampMs));
+  } catch {
+    return new Date(timestampMs).toLocaleDateString();
+  }
+}
+
+export function buildFallbackPsychologicalProfile(tracks: Track[]): GeneratedProfileDraft {
+  const count = tracks.length;
+  if (count === 0) {
+    return {
+      personalitySummary:
+        'Un oyente reflexivo y curioso que valora la autenticidad emocional por encima de las modas pasajeras.',
+      musicalTasteSummary:
+        'Colección en construcción abierta a sonidos de distintas culturas, idiomas y matices melódicos.',
+      keyTraits: [
+        'Curiosidad cultural abierta',
+        'Sensibilidad por lo auténtico',
+        'Gusto ecléctico en evolución',
+      ],
+      trackCount: 0,
+      aiQuotaExceeded: true,
+    };
+  }
+
+  const countries = Array.from(new Set(tracks.map((t) => t.country).filter(Boolean)));
+  const languages = Array.from(new Set(tracks.map((t) => t.language).filter(Boolean)));
+  const genres = Array.from(new Set(tracks.map((t) => t.genre).filter(Boolean)));
+  const sampleArtists = Array.from(new Set(tracks.map((t) => t.artist).filter(Boolean))).slice(0, 4);
+
+  const multiCountry = countries.length >= 2;
+  const multiLang = languages.length >= 2;
+
+  const personalitySummary = [
+    multiCountry
+      ? `Joan Manuel se perfila como un hombre de mente abierta, observador y con una notable curiosidad por mundos emocionales distintos al propio, conectando referencias de ${countries.slice(0, 4).join(', ')}.`
+      : `Joan Manuel muestra una personalidad definida, fiel a sus convicciones y con un vínculo muy personal con la identidad cultural de ${countries[0] || 'su entorno'}.`,
+    multiLang
+      ? `Escuchar voces en ${languages.slice(0, 4).join(', ')} sugiere a alguien empático que presta atención a la atmósfera, la cadencia y el sentimiento detrás de cada canción más allá del idioma.`
+      : `Su elección refleja intensidad emocional y gusto por las letras y melodías que acompañan momentos de introspección y disfrute genuino.`,
+  ].join(' ');
+
+  const musicalTasteSummary = `A partir de sus ${count} canciones actuales (con artistas como ${sampleArtists.join(', ')}), sus gustos combinan ${genres.slice(0, 5).join(', ')}. Predomina una curaduría con carácter propio: canciones con personalidad marcada, energía rítmica o melancolía elegante pensadas para escucharse con atención y compartirse.`;
+
+  const keyTraits: string[] = [
+    multiCountry ? 'Espíritu cosmopolita y curioso' : 'Identidad musical bien definida',
+    multiLang ? `Sensibilidad multilingüe (${languages.slice(0, 3).join(', ')})` : `Apego a la expresión en ${languages[0] || 'su idioma'}`,
+    genres.length >= 2 ? `Paladar ecléctico (${genres.slice(0, 2).join(' y ')})` : `Afinidad por ${genres[0] || 'sonidos con carácter'}`,
+    'Curador atento al clima emocional de cada tema',
+  ];
+
+  return {
+    personalitySummary: personalitySummary.slice(0, 1450),
+    musicalTasteSummary: musicalTasteSummary.slice(0, 1450),
+    keyTraits: keyTraits.slice(0, 5),
+    trackCount: count,
+    aiQuotaExceeded: true,
+  };
+}
+
 
 

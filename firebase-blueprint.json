@@ -180,6 +180,57 @@
         "hiddenSeedPhotoIds",
         "updatedAt"
       ]
+    },
+    "PsychologicalProfile": {
+      "title": "PsychologicalProfile",
+      "description": "AI-generated psychological and musical taste profile saved exclusively by Joan Manuel.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "UID of the owner."
+        },
+        "personalitySummary": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 1500,
+          "description": "Psychological portrait describing what kind of man Joan Manuel is based on his music."
+        },
+        "musicalTasteSummary": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 1500,
+          "description": "Analysis of Joan Manuel's musical preferences, emotional sensitivity, and global tastes."
+        },
+        "keyTraits": {
+          "type": "array",
+          "description": "Up to 6 concise personality & taste traits derived from his playlist."
+        },
+        "trackCount": {
+          "type": "number",
+          "description": "Number of songs analyzed when saving this profile."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-saved timestamp shown to visitors."
+        }
+      },
+      "required": [
+        "ownerId",
+        "personalitySummary",
+        "musicalTasteSummary",
+        "keyTraits",
+        "trackCount",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -200,6 +251,12 @@
         "$ref": "#/entities/SiteConfig"
       },
       "description": "Owner preferences document (main) controlling visibility of default showcase items."
+    },
+    "/profile/{profileId}": {
+      "schema": {
+        "$ref": "#/entities/PsychologicalProfile"
+      },
+      "description": "Publicly readable psychological and musical taste profile (main) generated and saved exclusively by Joan Manuel."
     }
   }
 }

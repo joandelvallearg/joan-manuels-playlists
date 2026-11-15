@@ -5,6 +5,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -41,14 +42,18 @@ import {
 import {
   OWNER_EMAIL,
   OWNER_SPANISH_NAME,
+  PUBLIC_SHARE_URL,
   type AnalyzedVideoResult,
+  type GeneratedProfileDraft,
   type Photo,
   type PlaylistGroup,
   type PlaylistMode,
+  type PsychologicalProfile,
   type Track,
   type TransliterationInfo,
 } from './types';
 import {
+  buildFallbackPsychologicalProfile,
   filterTracks,
   groupTracksByCountry,
   groupTracksByLanguage,
@@ -72,6 +77,7 @@ export default function App() {
   const [firestorePhotos, setFirestorePhotos] = useState<Photo[]>([]);
   const [hiddenSeedTrackIds, setHiddenSeedTrackIds] = useState<string[]>([]);
   const [hiddenSeedPhotoIds, setHiddenSeedPhotoIds] = useState<string[]>([]);
+  const [savedProfile, setSavedProfile] = useState<PsychologicalProfile | null>(null);
 
   const [currentLang, setCurrentLang] = useState<string>(() => {
     const saved = typeof window !== 'undefined' ? window.localStorage.getItem('jm_lang') : null;
@@ -195,10 +201,39 @@ export default function App() {
       }
     );
 
+    const profileRef = doc(db, 'profile', 'main');
+    const unsubProfile = onSnapshot(
+      profileRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setSavedProfile(null);
+          return;
+        }
+        const data = snapshot.data();
+        const createdAtMs =
+          typeof data.createdAt?.toMillis === 'function' ? data.createdAt.toMillis() : undefined;
+        const updatedAtMs =
+          typeof data.updatedAt?.toMillis === 'function' ? data.updatedAt.toMillis() : undefined;
+        setSavedProfile({
+          ownerId: String(data.ownerId ?? ''),
+          personalitySummary: String(data.personalitySummary ?? ''),
+          musicalTasteSummary: String(data.musicalTasteSummary ?? ''),
+          keyTraits: Array.isArray(data.keyTraits) ? data.keyTraits.map(String) : [],
+          trackCount: Number(data.trackCount ?? 0),
+          createdAtMs,
+          updatedAtMs,
+        });
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'profile/main');
+      }
+    );
+
     return () => {
       unsubTracks();
       unsubPhotos();
       unsubConfig();
+      unsubProfile();
     };
   }, []);
 
@@ -251,8 +286,15 @@ export default function App() {
     for (const ph of allPhotos) {
       if (ph.caption) set.add(ph.caption);
     }
+    if (savedProfile) {
+      if (savedProfile.personalitySummary) set.add(savedProfile.personalitySummary);
+      if (savedProfile.musicalTasteSummary) set.add(savedProfile.musicalTasteSummary);
+      for (const trait of savedProfile.keyTraits) {
+        if (trait) set.add(trait);
+      }
+    }
     return Array.from(set);
-  }, [allTracks, allPhotos, localIntlTerms]);
+  }, [allTracks, allPhotos, savedProfile, localIntlTerms]);
 
   // Automatic Gemini translation & transliteration when visitor language != 'es'
   useEffect(() => {
@@ -562,6 +604,60 @@ export default function App() {
     await updateSiteConfig(hiddenSeedTrackIds, allSeedIds);
   };
 
+  const handleGenerateProfile = async (): Promise<GeneratedProfileDraft> => {
+    if (!user || !isOwner) throw new Error('Solo Joan Manuel puede generar su perfil.');
+    if (allTracks.length === 0) {
+      throw new Error('Agrega al menos una canción antes de generar tu análisis.');
+    }
+
+    try {
+      const response = await fetch('/api/analyze-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tracks: allTracks.map((tr) => ({
+            title: tr.title,
+            artist: tr.artist,
+            country: tr.country,
+            language: tr.language,
+            genre: tr.genre,
+            curatorNote: tr.curatorNote ?? '',
+          })),
+        }),
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || !contentType.includes('application/json')) {
+        return buildFallbackPsychologicalProfile(allTracks);
+      }
+      const data = (await response.json()) as GeneratedProfileDraft;
+      return data;
+    } catch {
+      return buildFallbackPsychologicalProfile(allTracks);
+    }
+  };
+
+  const handleSaveProfile = async (draft: GeneratedProfileDraft): Promise<void> => {
+    if (!user || !isOwner) throw new Error('Solo Joan Manuel puede guardar este perfil.');
+    try {
+      const profileRef = doc(db, 'profile', 'main');
+      const existingSnap = await getDoc(profileRef);
+      const createdAtVal = existingSnap.exists()
+        ? existingSnap.data().createdAt
+        : serverTimestamp();
+      await setDoc(profileRef, {
+        ownerId: user.uid,
+        personalitySummary: draft.personalitySummary.slice(0, 1500),
+        musicalTasteSummary: draft.musicalTasteSummary.slice(0, 1500),
+        keyTraits: draft.keyTraits.map((s) => s.slice(0, 120)).slice(0, 6),
+        trackCount: Math.max(0, Math.min(5000, Math.round(draft.trackCount))),
+        createdAt: createdAtVal,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'profile/main');
+    }
+  };
+
   const handleUpdateCustomShareUrl = useCallback((nextUrl: string) => {
     setCustomShareUrl(nextUrl);
     try {
@@ -577,11 +673,11 @@ export default function App() {
 
   const currentBrowserUrl =
     typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '';
-  const isPrivatePreview = isPrivateDevUrl(currentBrowserUrl);
   const shareUrl = useMemo(
-    () => resolvePublicShareUrl(currentBrowserUrl, serverPublicUrl, customShareUrl),
+    () => resolvePublicShareUrl(currentBrowserUrl, serverPublicUrl || PUBLIC_SHARE_URL, customShareUrl),
     [currentBrowserUrl, serverPublicUrl, customShareUrl]
   );
+  const isPrivatePreview = isPrivateDevUrl(shareUrl);
 
   const activePlaylistLabel = useMemo(() => {
     if (!selectedKey) return null;
@@ -659,6 +755,11 @@ export default function App() {
           onSelectPhoto={(idx) => setLightboxIndex(idx)}
           onDeletePhoto={handleDeletePhoto}
           translateTerm={translateTerm}
+          currentLang={currentLang}
+          savedProfile={savedProfile}
+          hasAnyTracks={allTracks.length > 0}
+          onGenerateProfile={handleGenerateProfile}
+          onSaveProfile={handleSaveProfile}
         />
 
         {/* Inline QR Cross-Device Save Section */}

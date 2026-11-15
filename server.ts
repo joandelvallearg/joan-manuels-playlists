@@ -143,8 +143,7 @@ async function createApp() {
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/api/health', (_req, res) => {
-    const rawAppUrl = (process.env.SHARED_APP_URL || process.env.APP_URL || '').trim();
-    const publicUrl = rawAppUrl.replace('https://ais-dev-', 'https://ais-pre-');
+    const publicUrl = (process.env.SHARED_APP_URL || 'https://joan-manuels-playlists.vercel.app/').trim();
     res.json({ ok: true, publicUrl });
   });
 
@@ -402,6 +401,132 @@ async function createApp() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Translation failed.';
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post('/api/analyze-profile', async (req, res) => {
+    try {
+      interface ProfileTrackInput {
+        title: string;
+        artist: string;
+        country: string;
+        language: string;
+        genre: string;
+        curatorNote: string;
+      }
+
+      const rawTracks: unknown[] = Array.isArray(req.body?.tracks) ? req.body.tracks : [];
+      const tracks: ProfileTrackInput[] = rawTracks
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+        .slice(0, 60)
+        .map((item) => ({
+          title: String(item.title ?? '').slice(0, 140),
+          artist: String(item.artist ?? '').slice(0, 120),
+          country: String(item.country ?? '').slice(0, 80),
+          language: String(item.language ?? '').slice(0, 60),
+          genre: String(item.genre ?? '').slice(0, 60),
+          curatorNote: String(item.curatorNote ?? '').slice(0, 200),
+        }))
+        .filter((t) => Boolean(t.title || t.artist));
+
+      if (tracks.length === 0) {
+        res.status(400).json({ error: 'Agrega al menos una canción antes de generar tu análisis.' });
+        return;
+      }
+
+      const countries = Array.from(new Set(tracks.map((t) => t.country).filter(Boolean)));
+      const languages = Array.from(new Set(tracks.map((t) => t.language).filter(Boolean)));
+      const genres = Array.from(new Set(tracks.map((t) => t.genre).filter(Boolean)));
+      const fallbackDraft = {
+        personalitySummary: `Joan Manuel se perfila como un hombre curioso, sensible a los matices culturales y atento a las emociones que transmite la música de ${countries.slice(0, 4).join(', ') || 'distintos lugares'}. Su selección sugiere apertura mental y una forma introspectiva pero cálida de conectar con el mundo.`,
+        musicalTasteSummary: `Sus ${tracks.length} canciones actuales recorren ${genres.slice(0, 5).join(', ') || 'diversos estilos'} en ${languages.slice(0, 4).join(', ') || 'varios idiomas'}, mostrando un gusto personal por piezas con identidad y carácter propio.`,
+        keyTraits: [
+          countries.length >= 2 ? 'Mente abierta y curiosa' : 'Identidad cultural definida',
+          languages.length >= 2 ? 'Sensibilidad multilingüe' : 'Conexión profunda con las letras',
+          genres.length >= 2 ? 'Gusto musical ecléctico' : 'Preferencia por un sello sonoro propio',
+          'Atento a la atmósfera emocional',
+        ],
+        trackCount: tracks.length,
+        aiQuotaExceeded: true,
+      };
+
+      if (!process.env.GEMINI_API_KEY) {
+        res.json(fallbackDraft);
+        return;
+      }
+
+      const trackSummaryLines = tracks.map(
+        (t, idx) =>
+          `${idx + 1}. "${t.title}" — ${t.artist} | País: ${t.country} | Idioma: ${t.language} | Género: ${t.genre}${
+            t.curatorNote ? ` | Nota: ${t.curatorNote}` : ''
+          }`
+      );
+
+      const prompt = [
+        'Analiza la lista actual de canciones favoritas de Joan Manuel Sebastian Del Valle y elabora en español un perfil psicológico respetuoso, cálido, perspicaz y realista sobre qué tipo de hombre es y qué tipo de gustos musicales tiene, para que los visitantes de su página web lo conozcan mejor.',
+        '',
+        `Total de canciones actuales: ${tracks.length}`,
+        'Canciones en su página:',
+        ...trackSummaryLines,
+        '',
+        'Reglas:',
+        '- personalitySummary: 2 a 3 oraciones en tercera persona ("Joan Manuel...") explicando qué tipo de hombre refleja esta selección (sensibilidad, apertura cultural, carácter, mundo interior). Máximo 900 caracteres.',
+        '- musicalTasteSummary: 2 a 3 oraciones analizando sus gustos musicales (géneros, idiomas, países, energía/atmósfera, contrastes). Máximo 900 caracteres.',
+        '- keyTraits: Lista de 3 a 5 rasgos cortos y claros en español (máximo 7 palabras cada uno, sin hashtags ni emojis).',
+      ].join('\n');
+
+      try {
+        const rawJson = await callGeminiWithFallback({
+          models: [
+            { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.LOW },
+            { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW },
+          ],
+          contents: prompt,
+          systemInstruction:
+            'Eres un psicólogo cultural y crítico musical empático. Analizas gustos musicales reales para describir con calidez, agudeza y claridad la personalidad y preferencias estéticas de una persona. Devuelve únicamente JSON válido.',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              personalitySummary: { type: Type.STRING },
+              musicalTasteSummary: { type: Type.STRING },
+              keyTraits: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+              },
+            },
+            required: ['personalitySummary', 'musicalTasteSummary', 'keyTraits'],
+          },
+        });
+
+        const parsed = JSON.parse(rawJson) as {
+          personalitySummary?: string;
+          musicalTasteSummary?: string;
+          keyTraits?: string[];
+        };
+
+        const traits = Array.isArray(parsed.keyTraits)
+          ? parsed.keyTraits
+              .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+              .map((s) => s.trim().slice(0, 110))
+              .slice(0, 5)
+          : fallbackDraft.keyTraits;
+
+        res.json({
+          personalitySummary: (parsed.personalitySummary || fallbackDraft.personalitySummary).slice(0, 1450),
+          musicalTasteSummary: (parsed.musicalTasteSummary || fallbackDraft.musicalTasteSummary).slice(0, 1450),
+          keyTraits: traits.length > 0 ? traits : fallbackDraft.keyTraits,
+          trackCount: tracks.length,
+        });
+      } catch (err) {
+        if (isQuotaError(err)) {
+          res.json(fallbackDraft);
+          return;
+        }
+        throw err;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to analyze musical profile.';
       res.status(500).json({ error: message });
     }
   });
