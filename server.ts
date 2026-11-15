@@ -358,7 +358,9 @@ async function createApp() {
       const targetLanguage = typeof req.body?.targetLanguage === 'string' ? req.body.targetLanguage.trim() : '';
       const ownerName = typeof req.body?.ownerName === 'string' ? req.body.ownerName.trim() : 'Joan Manuel Sebastian Del Valle';
       const uiStrings = (req.body?.uiStrings && typeof req.body.uiStrings === 'object' ? req.body.uiStrings : {}) as Record<string, string>;
-      const terms = Array.isArray(req.body?.terms) ? req.body.terms.filter((t: unknown): t is string => typeof t === 'string' && t.trim().length > 0) : [];
+      const terms: string[] = Array.isArray(req.body?.terms)
+        ? (req.body.terms as unknown[]).filter((t: unknown): t is string => typeof t === 'string' && t.trim().length > 0)
+        : [];
 
       if (!targetLanguage) {
         res.status(400).json({ error: 'targetLanguage is required.' });
@@ -384,20 +386,20 @@ async function createApp() {
       }
 
       const entries = Object.entries(uiStrings).slice(0, 80);
-      const uniqueTerms = Array.from(new Set(terms)).slice(0, 80);
+      const uniqueTerms: string[] = Array.from(new Set<string>(terms)).slice(0, 80);
 
       const prompt = [
         `Target visitor language code/name: "${targetLanguage}".`,
         `Owner Spanish full name: "${ownerName}".`,
         'Task 1: Transliterate the owner\'s Spanish full name phonetically into the natural writing script of the target language.',
         'Task 2: Translate every UI string from Spanish into the target language naturally and concisely (keep navigation labels 1-3 words).',
-        'Task 3: Translate every music metadata term (genres, captions, notes) from Spanish into the target language.',
+        'Task 3: Translate EVERY indexed item in TERMS (including full psychological profile paragraphs, personality traits, photo captions, genres, and curator notes) completely and naturally from Spanish into the target language without summarizing or omitting sentences. Preserve each numeric "id" verbatim.',
         '',
         'UI_STRINGS:',
         JSON.stringify(entries.map(([key, value]) => ({ key, value }))),
         '',
         'TERMS:',
-        JSON.stringify(uniqueTerms),
+        JSON.stringify(uniqueTerms.map((text, id) => ({ id, text }))),
       ].join('\n');
 
       try {
@@ -408,7 +410,7 @@ async function createApp() {
           ],
           contents: prompt,
           systemInstruction:
-            'You are a precision literary translator and phonetic transliteration specialist. Preserve exact keys and source terms. Return valid JSON only.',
+            'You are a precision literary translator and phonetic transliteration specialist. Translate every indexed item completely and accurately, preserving each numeric id. Return valid JSON only.',
           responseSchema: {
             type: Type.OBJECT,
             properties: {
@@ -430,10 +432,10 @@ async function createApp() {
                 items: {
                   type: Type.OBJECT,
                   properties: {
-                    source: { type: Type.STRING },
+                    id: { type: Type.INTEGER },
                     target: { type: Type.STRING },
                   },
-                  required: ['source', 'target'],
+                  required: ['id', 'target'],
                 },
               },
             },
@@ -445,7 +447,7 @@ async function createApp() {
           transliteratedName?: string;
           scriptLabel?: string;
           translatedUi?: Array<{ key: string; value: string }>;
-          translatedTerms?: Array<{ source: string; target: string }>;
+          translatedTerms?: Array<{ id: number; target: string }>;
         };
 
         const uiMap: Record<string, string> = {};
@@ -455,7 +457,9 @@ async function createApp() {
 
         const termsMap: Record<string, string> = {};
         for (const item of parsed.translatedTerms ?? []) {
-          if (item.source && item.target) termsMap[item.source] = item.target;
+          if (typeof item.id === 'number' && item.id >= 0 && item.id < uniqueTerms.length && item.target?.trim()) {
+            termsMap[uniqueTerms[item.id]] = item.target.trim();
+          }
         }
 
         const result: TranslationResponsePayload = {
@@ -467,21 +471,135 @@ async function createApp() {
         serverTranslationCache.set(cacheKey, result);
         res.json(result);
       } catch (err) {
-        if (isQuotaError(err)) {
-          res.json({
-            transliteratedName: ownerName,
-            scriptLabel: targetLanguage,
-            translatedUi: {},
-            translatedTerms: {},
-            quotaFallback: true,
-          });
-          return;
-        }
-        throw err;
+        console.warn('[Translate fallback]', err instanceof Error ? err.message : String(err));
+        res.json({
+          transliteratedName: ownerName,
+          scriptLabel: targetLanguage,
+          translatedUi: {},
+          translatedTerms: {},
+          quotaFallback: true,
+        });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Translation failed.';
-      res.status(500).json({ error: message });
+      console.warn('[Translate route error]', err instanceof Error ? err.message : String(err));
+      res.json({
+        transliteratedName: 'Joan Manuel Sebastian Del Valle',
+        scriptLabel: 'es',
+        translatedUi: {},
+        translatedTerms: {},
+        quotaFallback: true,
+      });
+    }
+  });
+
+  app.post('/api/translate-profile', async (req, res) => {
+    try {
+      const personalitySummary =
+        typeof req.body?.personalitySummary === 'string' ? req.body.personalitySummary.trim().slice(0, 1500) : '';
+      const musicalTasteSummary =
+        typeof req.body?.musicalTasteSummary === 'string' ? req.body.musicalTasteSummary.trim().slice(0, 1500) : '';
+      const keyTraits = Array.isArray(req.body?.keyTraits)
+        ? req.body.keyTraits
+            .filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
+            .map((item: string) => item.trim().slice(0, 120))
+            .slice(0, 6)
+        : [];
+
+      if (!personalitySummary || !musicalTasteSummary || !process.env.GEMINI_API_KEY) {
+        res.json({ translations: {} });
+        return;
+      }
+
+      const targetLanguages = [
+        { code: 'en', name: 'English' },
+        { code: 'pt', name: 'Portuguese' },
+        { code: 'fr', name: 'French' },
+        { code: 'ja', name: 'Japanese' },
+        { code: 'ko', name: 'Korean' },
+        { code: 'ar', name: 'Arabic' },
+        { code: 'ru', name: 'Russian' },
+        { code: 'zh', name: 'Simplified Chinese' },
+        { code: 'hi', name: 'Hindi' },
+        { code: 'de', name: 'German' },
+        { code: 'it', name: 'Italian' },
+      ];
+
+      const prompt = [
+        'Translate the following Spanish psychological and musical profile completely and naturally into EVERY target language listed below.',
+        'Do not summarize or omit any sentence. Keep the warm, respectful third-person tone.',
+        '',
+        'TARGET_LANGUAGES:',
+        JSON.stringify(targetLanguages),
+        '',
+        'SOURCE_SPANISH_PROFILE:',
+        JSON.stringify({ personalitySummary, musicalTasteSummary, keyTraits }),
+      ].join('\n');
+
+      try {
+        const rawJson = await callGeminiWithFallback({
+          models: [
+            { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL },
+            { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW },
+          ],
+          contents: prompt,
+          systemInstruction:
+            'You are a precision literary translator. Translate the full Spanish psychological and musical profile into every requested language code faithfully. Return valid JSON only.',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              translations: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    code: { type: Type.STRING },
+                    personalitySummary: { type: Type.STRING },
+                    musicalTasteSummary: { type: Type.STRING },
+                    keyTraits: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                  },
+                  required: ['code', 'personalitySummary', 'musicalTasteSummary', 'keyTraits'],
+                },
+              },
+            },
+            required: ['translations'],
+          },
+        });
+
+        const parsed = JSON.parse(rawJson) as {
+          translations?: Array<{
+            code?: string;
+            personalitySummary?: string;
+            musicalTasteSummary?: string;
+            keyTraits?: string[];
+          }>;
+        };
+
+        const allowed = new Set(targetLanguages.map((l) => l.code));
+        const map: Record<string, { personalitySummary: string; musicalTasteSummary: string; keyTraits: string[] }> = {};
+
+        for (const entry of parsed.translations ?? []) {
+          const code = typeof entry.code === 'string' ? entry.code.trim().toLowerCase() : '';
+          if (!allowed.has(code)) continue;
+          const p = typeof entry.personalitySummary === 'string' ? entry.personalitySummary.trim().slice(0, 1500) : '';
+          const m = typeof entry.musicalTasteSummary === 'string' ? entry.musicalTasteSummary.trim().slice(0, 1500) : '';
+          const t = Array.isArray(entry.keyTraits)
+            ? entry.keyTraits.filter((s): s is string => typeof s === 'string' && s.trim().length > 0).map((s) => s.trim().slice(0, 120)).slice(0, 6)
+            : [];
+          if (p && m) {
+            map[code] = { personalitySummary: p, musicalTasteSummary: m, keyTraits: t };
+          }
+        }
+
+        res.json({ translations: map });
+      } catch (err) {
+        console.warn('[Translate profile fallback]', err instanceof Error ? err.message : String(err));
+        res.json({ translations: {} });
+      }
+    } catch {
+      res.json({ translations: {} });
     }
   });
 

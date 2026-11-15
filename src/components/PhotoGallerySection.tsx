@@ -8,6 +8,7 @@ import {
   type PsychologicalProfile,
 } from '../types';
 import { formatProfileDate } from '../utils/musicLogic';
+import { getLocalizedProfileContent } from '../utils/profileTranslation';
 
 interface PhotoGallerySectionProps {
   t: (key: UiStringKey) => string;
@@ -82,6 +83,9 @@ export function PhotoGallerySection({
   const formattedUpdatedDate = savedProfile?.updatedAtMs
     ? formatProfileDate(savedProfile.updatedAtMs, currentLang)
     : '';
+  const localizedProfile = savedProfile
+    ? getLocalizedProfileContent(savedProfile, currentLang, translateTerm)
+    : null;
 
   return (
     <section id="photos" className="scroll-mt-20 border-t border-zinc-200 bg-[#F6F7F9]">
@@ -293,7 +297,7 @@ export function PhotoGallerySection({
                     </div>
                   </div>
                 </div>
-              ) : savedProfile ? (
+              ) : savedProfile && localizedProfile ? (
                 <div className="space-y-6">
                   <div className="space-y-1.5 border-b border-zinc-100 pb-4">
                     <p className="text-xs font-medium text-blue-700">
@@ -320,7 +324,7 @@ export function PhotoGallerySection({
                       {t('profilePersonalityLabel')}
                     </h3>
                     <p className="text-[15px] text-zinc-700 leading-[1.65]">
-                      {translateTerm(savedProfile.personalitySummary)}
+                      {localizedProfile.personalitySummary}
                     </p>
                   </article>
 
@@ -329,22 +333,22 @@ export function PhotoGallerySection({
                       {t('profileTasteLabel')}
                     </h3>
                     <p className="text-[15px] text-zinc-700 leading-[1.65]">
-                      {translateTerm(savedProfile.musicalTasteSummary)}
+                      {localizedProfile.musicalTasteSummary}
                     </p>
                   </article>
 
-                  {savedProfile.keyTraits.length > 0 && (
+                  {localizedProfile.keyTraits.length > 0 && (
                     <article className="space-y-3 border-t border-zinc-100 pt-5">
                       <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance">
                         {t('profileTraitsLabel')}
                       </h3>
                       <ul className="grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2 text-sm font-medium text-zinc-800">
-                        {savedProfile.keyTraits.map((trait, idx) => (
+                        {localizedProfile.keyTraits.map((trait, idx) => (
                           <li key={idx} className="flex items-baseline gap-2.5">
                             <span className="font-mono text-blue-600 shrink-0" aria-hidden="true">
                               —
                             </span>
-                            <span className="leading-snug">{translateTerm(trait)}</span>
+                            <span className="leading-snug">{trait}</span>
                           </li>
                         ))}
                       </ul>

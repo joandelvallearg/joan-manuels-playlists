@@ -69,12 +69,19 @@ export interface AnalyzedVideoResult {
   aiQuotaExceeded?: boolean;
 }
 
+export interface ProfileTranslation {
+  personalitySummary: string;
+  musicalTasteSummary: string;
+  keyTraits: string[];
+}
+
 export interface PsychologicalProfile {
   ownerId: string;
   personalitySummary: string;
   musicalTasteSummary: string;
   keyTraits: string[];
   trackCount: number;
+  translations?: Record<string, ProfileTranslation>;
   createdAtMs?: number;
   updatedAtMs?: number;
 }
@@ -84,6 +91,6 @@ export interface GeneratedProfileDraft {
   musicalTasteSummary: string;
   keyTraits: string[];
   trackCount: number;
+  translations?: Record<string, ProfileTranslation>;
   aiQuotaExceeded?: boolean;
 }
-

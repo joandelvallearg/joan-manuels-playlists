@@ -116,7 +116,7 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'ownerId', 'personalitySummary', 'musicalTasteSummary',
-          'keyTraits', 'trackCount', 'createdAt', 'updatedAt'
+          'keyTraits', 'trackCount', 'translations', 'createdAt', 'updatedAt'
         ])
         && data.ownerId is string
         && data.ownerId.size() > 0 && data.ownerId.size() <= 128
@@ -130,6 +130,7 @@ service cloud.firestore {
         && (data.keyTraits.size() == 0 || (data.keyTraits[0] is string && data.keyTraits[0].size() <= 120))
         && data.trackCount is number
         && data.trackCount >= 0 && data.trackCount <= 5000
+        && (!data.keys().hasAny(['translations']) || (data.translations is map && data.translations.size() <= 15))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -213,7 +214,7 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'personalitySummary', 'musicalTasteSummary', 'keyTraits', 'trackCount', 'updatedAt'
+          'personalitySummary', 'musicalTasteSummary', 'keyTraits', 'trackCount', 'translations', 'updatedAt'
         ]);
       allow delete: if false;
     }

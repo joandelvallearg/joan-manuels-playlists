@@ -48,6 +48,7 @@ import {
   type Photo,
   type PlaylistGroup,
   type PlaylistMode,
+  type ProfileTranslation,
   type PsychologicalProfile,
   type Track,
   type TransliterationInfo,
@@ -65,6 +66,7 @@ import {
   translateCountryByCode,
   translateLanguageByCode,
 } from './utils/musicLogic';
+import { translateTermsPublicFallback } from './utils/profileTranslation';
 
 interface CachedTranslationPayload {
   transliteratedName: string;
@@ -217,12 +219,34 @@ export default function App() {
           typeof data.createdAt?.toMillis === 'function' ? data.createdAt.toMillis() : undefined;
         const updatedAtMs =
           typeof data.updatedAt?.toMillis === 'function' ? data.updatedAt.toMillis() : undefined;
+        const rawTranslations =
+          data.translations && typeof data.translations === 'object'
+            ? (data.translations as Record<string, unknown>)
+            : undefined;
+        const parsedTranslations: Record<string, ProfileTranslation> = {};
+        if (rawTranslations) {
+          for (const [langCode, val] of Object.entries(rawTranslations)) {
+            if (!val || typeof val !== 'object') continue;
+            const entry = val as Record<string, unknown>;
+            const p = typeof entry.personalitySummary === 'string' ? entry.personalitySummary.trim() : '';
+            const m = typeof entry.musicalTasteSummary === 'string' ? entry.musicalTasteSummary.trim() : '';
+            const k = Array.isArray(entry.keyTraits) ? entry.keyTraits.map(String) : [];
+            if (p && m) {
+              parsedTranslations[langCode] = {
+                personalitySummary: p,
+                musicalTasteSummary: m,
+                keyTraits: k,
+              };
+            }
+          }
+        }
         setSavedProfile({
           ownerId: String(data.ownerId ?? ''),
           personalitySummary: String(data.personalitySummary ?? ''),
           musicalTasteSummary: String(data.musicalTasteSummary ?? ''),
           keyTraits: Array.isArray(data.keyTraits) ? data.keyTraits.map(String) : [],
           trackCount: Number(data.trackCount ?? 0),
+          translations: Object.keys(parsedTranslations).length > 0 ? parsedTranslations : undefined,
           createdAtMs,
           updatedAtMs,
         });
@@ -277,9 +301,22 @@ export default function App() {
     return map;
   }, [allTracks, currentLang]);
 
-  // Only send genuinely untranslated non-country/non-language dynamic terms to Gemini
+  // Prioritize profile terms first (when not already pre-translated for currentLang), then tracks & captions
   const dynamicTerms = useMemo(() => {
     const set = new Set<string>();
+    const hasPreTranslatedProfile = Boolean(
+      currentLang !== 'es' &&
+        savedProfile?.translations?.[currentLang]?.personalitySummary?.trim() &&
+        savedProfile?.translations?.[currentLang]?.musicalTasteSummary?.trim()
+    );
+
+    if (savedProfile && !hasPreTranslatedProfile) {
+      if (savedProfile.personalitySummary) set.add(savedProfile.personalitySummary);
+      if (savedProfile.musicalTasteSummary) set.add(savedProfile.musicalTasteSummary);
+      for (const trait of savedProfile.keyTraits) {
+        if (trait) set.add(trait);
+      }
+    }
     for (const tr of allTracks) {
       if (tr.country && !localIntlTerms[tr.country]) set.add(tr.country);
       if (tr.language && !localIntlTerms[tr.language]) set.add(tr.language);
@@ -289,17 +326,10 @@ export default function App() {
     for (const ph of allPhotos) {
       if (ph.caption) set.add(ph.caption);
     }
-    if (savedProfile) {
-      if (savedProfile.personalitySummary) set.add(savedProfile.personalitySummary);
-      if (savedProfile.musicalTasteSummary) set.add(savedProfile.musicalTasteSummary);
-      for (const trait of savedProfile.keyTraits) {
-        if (trait) set.add(trait);
-      }
-    }
     return Array.from(set);
-  }, [allTracks, allPhotos, savedProfile, localIntlTerms]);
+  }, [allTracks, allPhotos, savedProfile, localIntlTerms, currentLang]);
 
-  // Automatic Gemini translation & transliteration when visitor language != 'es'
+  // Automatic translation & transliteration when visitor language != 'es' (with static-host fallback)
   useEffect(() => {
     const langMeta = LANGUAGE_OPTIONS.find((l) => l.code === currentLang);
     document.documentElement.lang = currentLang;
@@ -309,67 +339,97 @@ export default function App() {
 
     const staticDict = STATIC_UI_DICTIONARIES[currentLang];
     const staticTerms = STATIC_TERM_TRANSLATIONS[currentLang] ?? {};
-    const missingTerms = dynamicTerms.filter(
-      (term) => !staticTerms[term] && !aiCache[currentLang]?.translatedTerms[term]
-    );
-    const needsUiTranslation = !staticDict && !aiCache[currentLang]?.translatedUi?.navPhotos;
+    const storageKey = `jm_i18n_v2_${currentLang}`;
 
-    if (!needsUiTranslation && missingTerms.length === 0) return;
-
-    const storageKey = `jm_i18n_v1_${currentLang}`;
+    let storedPayload: CachedTranslationPayload | null = null;
     try {
       const stored = window.localStorage.getItem(storageKey);
       if (stored) {
-        const parsed = JSON.parse(stored) as CachedTranslationPayload;
-        const stillMissing = dynamicTerms.filter(
-          (term) => !staticTerms[term] && !parsed.translatedTerms?.[term]
-        );
-        if (!stillMissing.length && (staticDict || parsed.translatedUi?.navPhotos)) {
-          setAiCache((prev) => ({ ...prev, [currentLang]: parsed }));
-          return;
-        }
+        storedPayload = JSON.parse(stored) as CachedTranslationPayload;
       }
     } catch {
       // Ignore storage parsing errors
     }
 
+    const knownTerms: Record<string, string> = {
+      ...(storedPayload?.translatedTerms ?? {}),
+      ...(aiCache[currentLang]?.translatedTerms ?? {}),
+    };
+
+    const missingTerms = dynamicTerms.filter(
+      (term) => !staticTerms[term] && !knownTerms[term]
+    );
+    const needsUiTranslation =
+      !staticDict &&
+      !aiCache[currentLang]?.translatedUi?.navPhotos &&
+      !storedPayload?.translatedUi?.navPhotos;
+
+    if (storedPayload && !aiCache[currentLang]) {
+      setAiCache((prev) => ({ ...prev, [currentLang]: storedPayload! }));
+    }
+
+    if (!needsUiTranslation && missingTerms.length === 0) return;
+
     let cancelled = false;
     setIsTranslating(true);
-    fetch('/api/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        targetLanguage: langMeta ? `${langMeta.englishName} (${currentLang})` : currentLang,
-        ownerName: OWNER_SPANISH_NAME,
-        uiStrings: needsUiTranslation ? BASE_UI_STRINGS : {},
-        terms: missingTerms,
-      }),
-    })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Translation failed'))))
-      .then((payload: CachedTranslationPayload) => {
-        if (cancelled) return;
-        setAiCache((prev) => {
-          const existing = prev[currentLang];
-          const merged: CachedTranslationPayload = {
-            transliteratedName: payload.transliteratedName || existing?.transliteratedName || OWNER_SPANISH_NAME,
-            scriptLabel: payload.scriptLabel || existing?.scriptLabel || currentLang,
-            translatedUi: { ...(existing?.translatedUi ?? {}), ...(payload.translatedUi ?? {}) },
-            translatedTerms: { ...(existing?.translatedTerms ?? {}), ...(payload.translatedTerms ?? {}) },
-          };
-          try {
-            window.localStorage.setItem(storageKey, JSON.stringify(merged));
-          } catch {
-            // Ignore storage quota errors
-          }
-          return { ...prev, [currentLang]: merged };
+
+    const runTranslation = async () => {
+      let nextTransliterated = storedPayload?.transliteratedName || OWNER_SPANISH_NAME;
+      let nextScriptLabel = storedPayload?.scriptLabel || currentLang;
+      let nextUi: Record<string, string> = {};
+      const nextTerms: Record<string, string> = {};
+
+      try {
+        const res = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetLanguage: langMeta ? `${langMeta.englishName} (${currentLang})` : currentLang,
+            ownerName: OWNER_SPANISH_NAME,
+            uiStrings: needsUiTranslation ? BASE_UI_STRINGS : {},
+            terms: missingTerms,
+          }),
         });
-      })
-      .catch(() => {
-        // Fallback gracefully to static dictionaries
-      })
-      .finally(() => {
-        if (!cancelled) setIsTranslating(false);
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const payload = (await res.json()) as CachedTranslationPayload & { quotaFallback?: boolean };
+          if (payload.transliteratedName) nextTransliterated = payload.transliteratedName;
+          if (payload.scriptLabel) nextScriptLabel = payload.scriptLabel;
+          if (payload.translatedUi) nextUi = payload.translatedUi;
+          if (payload.translatedTerms) Object.assign(nextTerms, payload.translatedTerms);
+        }
+      } catch {
+        // Static deployment or offline /api/translate -> handled by fallback below
+      }
+
+      const stillUntranslated = missingTerms.filter((term) => !nextTerms[term]);
+      if (stillUntranslated.length > 0) {
+        const fallbackMap = await translateTermsPublicFallback(stillUntranslated, currentLang);
+        Object.assign(nextTerms, fallbackMap);
+      }
+
+      if (cancelled) return;
+
+      setAiCache((prev) => {
+        const existing = prev[currentLang] ?? storedPayload ?? undefined;
+        const merged: CachedTranslationPayload = {
+          transliteratedName: nextTransliterated || existing?.transliteratedName || OWNER_SPANISH_NAME,
+          scriptLabel: nextScriptLabel || existing?.scriptLabel || currentLang,
+          translatedUi: { ...(existing?.translatedUi ?? {}), ...nextUi },
+          translatedTerms: { ...(existing?.translatedTerms ?? {}), ...nextTerms },
+        };
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(merged));
+        } catch {
+          // Ignore storage quota errors
+        }
+        return { ...prev, [currentLang]: merged };
       });
+    };
+
+    runTranslation().finally(() => {
+      if (!cancelled) setIsTranslating(false);
+    });
 
     return () => {
       cancelled = true;
@@ -652,13 +712,37 @@ export default function App() {
 
   const handleSaveProfile = async (draft: GeneratedProfileDraft): Promise<void> => {
     if (!user || !isOwner) throw new Error('Solo Joan Manuel puede guardar este perfil.');
+    let translations = draft.translations;
+    if (!translations || Object.keys(translations).length === 0) {
+      try {
+        const res = await fetch('/api/translate-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            personalitySummary: draft.personalitySummary.slice(0, 1500),
+            musicalTasteSummary: draft.musicalTasteSummary.slice(0, 1500),
+            keyTraits: draft.keyTraits.map((s) => s.slice(0, 120)).slice(0, 6),
+          }),
+        });
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = (await res.json()) as { translations?: Record<string, ProfileTranslation> };
+          if (data.translations && Object.keys(data.translations).length > 0) {
+            translations = data.translations;
+          }
+        }
+      } catch {
+        // Ignore if running on static host; client visitors automatically translate via public fallback
+      }
+    }
+
     try {
       const profileRef = doc(db, 'profile', 'main');
       const existingSnap = await getDoc(profileRef);
       const createdAtVal = existingSnap.exists()
         ? existingSnap.data().createdAt
         : serverTimestamp();
-      await setDoc(profileRef, {
+      const payload: Record<string, unknown> = {
         ownerId: user.uid,
         personalitySummary: draft.personalitySummary.slice(0, 1500),
         musicalTasteSummary: draft.musicalTasteSummary.slice(0, 1500),
@@ -666,7 +750,11 @@ export default function App() {
         trackCount: Math.max(0, Math.min(5000, Math.round(draft.trackCount))),
         createdAt: createdAtVal,
         updatedAt: serverTimestamp(),
-      });
+      };
+      if (translations && Object.keys(translations).length > 0) {
+        payload.translations = translations;
+      }
+      await setDoc(profileRef, payload);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'profile/main');
     }

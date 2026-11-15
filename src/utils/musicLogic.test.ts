@@ -17,7 +17,12 @@ import {
   translateCountryByCode,
   translateLanguageByCode,
 } from './musicLogic';
-import type { Track } from '../types';
+import {
+  getLocalizedProfileContent,
+  mapToPublicTranslateLang,
+  parseGoogleTranslateResponse,
+} from './profileTranslation';
+import type { PsychologicalProfile, Track } from '../types';
 
 const SAMPLE_TRACKS: Track[] = [
   {
@@ -226,3 +231,33 @@ test('multi-country and bilingual remixes render two flags, dual translations, a
   assert.equal(remixMatches[0].id, 'remix-1');
 });
 
+test('getLocalizedProfileContent prioritizes pre-translated profile and falls back cleanly', () => {
+  const profile: PsychologicalProfile = {
+    ownerId: 'owner1',
+    personalitySummary: 'Joan Manuel es sensible y curioso.',
+    musicalTasteSummary: 'Le gusta la música de varios países.',
+    keyTraits: ['Curiosidad cultural'],
+    trackCount: 14,
+    translations: {
+      en: {
+        personalitySummary: 'Joan Manuel is sensitive and curious.',
+        musicalTasteSummary: 'He enjoys music from several countries.',
+        keyTraits: ['Cultural curiosity'],
+      },
+    },
+  };
+
+  const identity = (t: string) => t;
+  const mockTranslate = (t: string) => `[pt] ${t}`;
+
+  assert.equal(getLocalizedProfileContent(profile, 'es', mockTranslate).personalitySummary, 'Joan Manuel es sensible y curioso.');
+  assert.equal(getLocalizedProfileContent(profile, 'en', identity).personalitySummary, 'Joan Manuel is sensitive and curious.');
+  assert.deepEqual(getLocalizedProfileContent(profile, 'en', identity).keyTraits, ['Cultural curiosity']);
+  assert.equal(getLocalizedProfileContent(profile, 'pt', mockTranslate).personalitySummary, '[pt] Joan Manuel es sensible y curioso.');
+  assert.equal(mapToPublicTranslateLang('zh'), 'zh-CN');
+  assert.equal(mapToPublicTranslateLang('pt-BR'), 'pt');
+  assert.equal(
+    parseGoogleTranslateResponse([[['Hello ', 'Hola '], ['world', 'mundo']]]),
+    'Hello world'
+  );
+});
