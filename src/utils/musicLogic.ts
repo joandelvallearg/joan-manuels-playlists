@@ -546,5 +546,285 @@ export function buildFallbackPsychologicalProfile(tracks: Track[]): GeneratedPro
   };
 }
 
+export type ThemeMode = 'light' | 'dark';
+
+export const THEME_STORAGE_KEY = 'jm_theme';
+
+export function resolveInitialTheme(
+  savedTheme: string | null | undefined,
+  systemPrefersDark: boolean
+): ThemeMode {
+  if (savedTheme === 'dark' || savedTheme === 'light') {
+    return savedTheme;
+  }
+  return systemPrefersDark ? 'dark' : 'light';
+}
+
+export function toggleThemeMode(current: ThemeMode): ThemeMode {
+  return current === 'dark' ? 'light' : 'dark';
+}
+
+function stripDiacritics(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function normalizeGenreKey(rawGenre: string): string {
+  return stripDiacritics(rawGenre)
+    .replace(/\(\s*remix\s*\)/g, '')
+    .replace(/\bremix\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const GENRE_FAMILIES: Array<{ family: string; keywords: string[] }> = [
+  {
+    family: 'pop',
+    keywords: [
+      'pop',
+      'synth-pop',
+      'synthpop',
+      'electropop',
+      'indie pop',
+      'city pop',
+      'dream pop',
+      'dance-pop',
+      'latin pop',
+      'pop latino',
+      'pop frances',
+      'pop alternativo',
+      'pop acustico',
+      'pop arabe',
+      'pop rock',
+      'orquestal',
+    ],
+  },
+  {
+    family: 'electronic-dance',
+    keywords: [
+      'electro',
+      'electronic',
+      'electronico',
+      'electronica',
+      'electropop',
+      'dance',
+      'eurodance',
+      'guaracha',
+      'aleteo',
+      'synth-pop',
+      'synthpop',
+      'cumbia electronica',
+      'house',
+      'club',
+    ],
+  },
+  {
+    family: 'latin-urban-tropical',
+    keywords: [
+      'latino',
+      'latin',
+      'guaracha',
+      'aleteo',
+      'afrobeat',
+      'dancehall',
+      'regueton',
+      'reggaeton',
+      'cumbia',
+      'tropical',
+      'forro',
+    ],
+  },
+  {
+    family: 'brazilian',
+    keywords: ['mpb', 'musica popular brasileira', 'bossa nova', 'forro', 'samba'],
+  },
+  {
+    family: 'rock-indie',
+    keywords: ['rock', 'indie', 'alternativo', 'alternative', 'clasico', 'classic rock', 'pop rock'],
+  },
+  {
+    family: 'ballad-acoustic',
+    keywords: [
+      'balada',
+      'ballad',
+      'chanson',
+      'acustico',
+      'acoustic',
+      'soul',
+      'r&b',
+      'melancolico',
+      'cantautor',
+      'folk',
+      'mpb',
+    ],
+  },
+  {
+    family: 'instrumental-piano',
+    keywords: [
+      'instrumental',
+      'piano',
+      'contemporaneo',
+      'clasica',
+      'classical',
+      'banda sonora',
+      'soundtrack',
+      'ambient',
+    ],
+  },
+];
+
+function extractGenreFamilies(rawGenre: string): Set<string> {
+  const normalized = stripDiacritics(rawGenre);
+  const families = new Set<string>();
+  if (!normalized) return families;
+
+  for (const entry of GENRE_FAMILIES) {
+    if (entry.keywords.some((kw) => normalized.includes(kw))) {
+      families.add(entry.family);
+    }
+  }
+  return families;
+}
+
+function extractGenreTokens(rawGenre: string): Set<string> {
+  const stopWords = new Set(['de', 'del', 'la', 'el', 'y', 'con', 'and', 'with', 'of', 'remix']);
+  return new Set(
+    stripDiacritics(rawGenre)
+      .split(/[^a-z0-9]+/)
+      .filter((tok) => tok.length >= 3 && !stopWords.has(tok))
+  );
+}
+
+export function computeGenreSimilarityScore(genreA: string, genreB: string): number {
+  const normA = normalizeGenreKey(genreA);
+  const normB = normalizeGenreKey(genreB);
+  if (!normA || !normB) return 0;
+  if (normA === normB) return 100;
+
+  let score = 0;
+  const familiesA = extractGenreFamilies(genreA);
+  const familiesB = extractGenreFamilies(genreB);
+  for (const fam of familiesA) {
+    if (familiesB.has(fam)) score += 30;
+  }
+
+  const tokensA = extractGenreTokens(genreA);
+  const tokensB = extractGenreTokens(genreB);
+  for (const tok of tokensA) {
+    if (tokensB.has(tok)) score += 20;
+  }
+
+  return score;
+}
+
+function splitCodesSet(rawCode: string): Set<string> {
+  return new Set(
+    rawCode
+      .split(/[,/;&\s]+/)
+      .map((c) => c.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+export function deterministicShuffleTracks(tracks: Track[], seed: number): Track[] {
+  const copy = [...tracks];
+  let state = (Math.abs(Math.floor(seed)) || 1) % 2147483647;
+  if (state <= 0) state = 1;
+  const nextRand = () => {
+    state = (state * 48271) % 2147483647;
+    return (state - 1) / 2147483646;
+  };
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(nextRand() * (i + 1));
+    const tmp = copy[i];
+    copy[i] = copy[j];
+    copy[j] = tmp;
+  }
+  return copy;
+}
+
+export function buildAudioQueue(
+  tracks: Track[],
+  anchorTrack: Track | null,
+  playMode: import('../types').AudioPlayMode,
+  radioSeed = 1
+): Track[] {
+  if (tracks.length === 0) return [];
+  const anchor = anchorTrack && tracks.some((tr) => tr.id === anchorTrack.id) ? anchorTrack : tracks[0];
+
+  if (playMode === 'ordered') {
+    return [...tracks];
+  }
+
+  if (playMode === 'radio') {
+    const rest = tracks.filter((tr) => tr.id !== anchor.id);
+    return [anchor, ...deterministicShuffleTracks(rest, radioSeed)];
+  }
+
+  if (playMode === 'same-language') {
+    const anchorCodes = splitCodesSet(anchor.languageCode);
+    const matches = tracks.filter((tr) => {
+      if (tr.id === anchor.id) return false;
+      const codes = splitCodesSet(tr.languageCode);
+      for (const code of anchorCodes) {
+        if (codes.has(code)) return true;
+      }
+      return stripDiacritics(tr.language) === stripDiacritics(anchor.language);
+    });
+    return [anchor, ...matches];
+  }
+
+  if (playMode === 'same-genre') {
+    const anchorGenre = normalizeGenreKey(anchor.genre);
+    const matches = tracks.filter(
+      (tr) => tr.id !== anchor.id && normalizeGenreKey(tr.genre) === anchorGenre
+    );
+    return [anchor, ...matches];
+  }
+
+  // similar-genre
+  const scored = tracks
+    .filter((tr) => tr.id !== anchor.id)
+    .map((tr) => ({
+      track: tr,
+      score: computeGenreSimilarityScore(anchor.genre, tr.genre),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  return [anchor, ...scored.map((entry) => entry.track)];
+}
+
+export function getAdjacentAudioTrack(
+  queue: Track[],
+  currentTrackId: string | null,
+  direction: 1 | -1,
+  wrapAround = true
+): Track | null {
+  if (queue.length === 0) return null;
+  if (!currentTrackId) return queue[0];
+  const currentIndex = queue.findIndex((tr) => tr.id === currentTrackId);
+  if (currentIndex === -1) return queue[0];
+
+  const targetIndex = currentIndex + direction;
+  if (targetIndex >= 0 && targetIndex < queue.length) {
+    return queue[targetIndex];
+  }
+  if (!wrapAround) return null;
+  return direction === 1 ? queue[0] : queue[queue.length - 1];
+}
+
+export function formatAudioTime(rawSeconds: number): string {
+  if (!Number.isFinite(rawSeconds) || rawSeconds <= 0) return '0:00';
+  const totalSeconds = Math.floor(rawSeconds);
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+
 
 

@@ -33,7 +33,7 @@ export function StagePlayer({
   }
 
   return (
-    <section id="player" data-testid="stage-player" className="scroll-mt-20 bg-[#0A0A0B] text-white">
+    <section id="player" data-testid="stage-player" className="scroll-mt-20 bg-[#0A0A0B] text-white dark:border-b dark:border-zinc-800">
       <div className="mx-auto max-w-6xl px-6 py-8 lg:py-10">
         <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-12">
           {/* Embedded YouTube Theater */}

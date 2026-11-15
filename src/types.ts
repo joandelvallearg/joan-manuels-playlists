@@ -4,6 +4,8 @@ export const PUBLIC_SHARE_URL = 'https://joan-manuels-playlists.vercel.app/';
 
 export type PlaylistMode = 'country' | 'language' | 'all';
 
+export type AudioPlayMode = 'ordered' | 'radio' | 'similar-genre' | 'same-language' | 'same-genre';
+
 export interface Track {
   id: string;
   ownerId: string;

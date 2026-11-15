@@ -225,16 +225,16 @@ export function OwnerStudioModal({
       aria-labelledby="owner-studio-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
     >
-      <div className="w-full max-w-xl rounded-2xl border border-zinc-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
-          <h2 id="owner-studio-title" className="font-display text-lg font-bold text-zinc-950">
+      <div className="w-full max-w-xl rounded-2xl border border-zinc-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
+          <h2 id="owner-studio-title" className="font-display text-lg font-bold text-zinc-950 dark:text-zinc-50">
             {t('ownerModalTitle')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label={t('close')}
-            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 cursor-pointer"
+            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 cursor-pointer dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -243,17 +243,17 @@ export function OwnerStudioModal({
         <div className="overflow-y-auto p-6 space-y-6">
           {!user && (
             <div className="space-y-4">
-              <p className="text-sm text-zinc-700 leading-relaxed">{t('ownerOnlyNotice')}</p>
-              <p className="font-mono text-xs text-zinc-500">{OWNER_EMAIL}</p>
+              <p className="text-sm text-zinc-700 leading-relaxed dark:text-zinc-300">{t('ownerOnlyNotice')}</p>
+              <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">{OWNER_EMAIL}</p>
               {authError && (
-                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
                   {authError}
                 </p>
               )}
               <button
                 type="button"
                 onClick={handleSignInClick}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-950 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-600 transition-colors cursor-pointer"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-950 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-600 transition-colors cursor-pointer dark:bg-blue-600 dark:hover:bg-blue-500"
               >
                 <LogIn className="h-4 w-4" aria-hidden="true" />
                 <span>{t('signInGoogle')}</span>
@@ -263,14 +263,14 @@ export function OwnerStudioModal({
 
           {user && !isOwner && (
             <div className="space-y-4">
-              <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
                 {t('unauthorizedEmail')}
               </p>
-              <p className="text-xs text-zinc-500">{user.email}</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{user.email}</p>
               <button
                 type="button"
                 onClick={onSignOut}
-                className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-4 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-4 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 cursor-pointer dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
                 <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>{t('signOut')}</span>
@@ -280,13 +280,13 @@ export function OwnerStudioModal({
 
           {user && isOwner && (
             <div className="space-y-5">
-              <div className="flex items-center justify-between gap-4 border-b border-zinc-200 pb-3">
-                <div className="inline-flex items-center gap-1 rounded-xl bg-zinc-100 p-1">
+              <div className="flex items-center justify-between gap-4 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+                <div className="inline-flex items-center gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-950">
                   <button
                     type="button"
                     onClick={() => setActiveTab('video')}
                     className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
-                      activeTab === 'video' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-600 hover:text-zinc-950'
+                      activeTab === 'video' ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-zinc-50' : 'text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-100'
                     }`}
                   >
                     <Video className="h-3.5 w-3.5" aria-hidden="true" />
@@ -296,7 +296,7 @@ export function OwnerStudioModal({
                     type="button"
                     onClick={() => setActiveTab('photo')}
                     className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
-                      activeTab === 'photo' ? 'bg-white text-zinc-950 shadow-sm' : 'text-zinc-600 hover:text-zinc-950'
+                      activeTab === 'photo' ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-zinc-50' : 'text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-100'
                     }`}
                   >
                     <Upload className="h-3.5 w-3.5" aria-hidden="true" />
@@ -307,7 +307,7 @@ export function OwnerStudioModal({
                 <button
                   type="button"
                   onClick={onSignOut}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-950 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-950 cursor-pointer dark:text-zinc-400 dark:hover:text-white"
                 >
                   <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{t('signOut')}</span>
@@ -317,8 +317,8 @@ export function OwnerStudioModal({
               {activeTab === 'video' ? (
                 <div className="space-y-5">
                   {hasDefaultTracks && (
-                    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
-                      <p className="text-xs text-zinc-600">
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950">
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400">
                         Los videos de ejemplo desaparecen automáticamente al publicar tu primer video, o puedes quitarlos ahora.
                       </p>
                       <button
@@ -326,14 +326,14 @@ export function OwnerStudioModal({
                         onClick={() => {
                           onClearDefaultTracks();
                         }}
-                        className="shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-red-50 hover:text-red-700 hover:border-red-200 cursor-pointer whitespace-nowrap"
+                        className="shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-red-50 hover:text-red-700 hover:border-red-200 cursor-pointer whitespace-nowrap dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-red-950/50 dark:hover:text-red-300"
                       >
                         {t('clearDefaultTracks')}
                       </button>
                     </div>
                   )}
                   <form onSubmit={handleAnalyze} className="space-y-3">
-                    <label htmlFor="youtube-url-input" className="block text-xs font-semibold text-zinc-800">
+                    <label htmlFor="youtube-url-input" className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200">
                       {t('youtubeUrlLabel')}
                     </label>
                     <input
@@ -343,7 +343,7 @@ export function OwnerStudioModal({
                       value={youtubeUrl}
                       onChange={(e) => setYoutubeUrl(e.target.value)}
                       placeholder={t('youtubeUrlPlaceholder')}
-                      className="w-full rounded-xl border border-zinc-300 px-3.5 py-2.5 text-sm text-zinc-950 focus:border-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm text-zinc-950 focus:border-blue-600 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
                     />
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <button
@@ -357,7 +357,7 @@ export function OwnerStudioModal({
                       <button
                         type="button"
                         onClick={handleManualDraft}
-                        className="inline-flex items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 cursor-pointer whitespace-nowrap"
+                        className="inline-flex items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 cursor-pointer whitespace-nowrap dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
                       >
                         Completar manualmente
                       </button>
@@ -365,35 +365,35 @@ export function OwnerStudioModal({
                   </form>
 
                   {quotaNotice && (
-                    <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 leading-relaxed">
+                    <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 leading-relaxed dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
                       Se alcanzó el límite diario del nivel gratuito de Gemini AI. Obtuvimos el título y la miniatura desde YouTube; completa o ajusta el país, idioma y género abajo para publicar tu canción. Si deseas mayor cuota de IA, puedes seleccionar una clave con facturación en <strong>Settings &gt; Secrets</strong>.
                     </p>
                   )}
 
                   {videoError && (
-                    <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
                       {videoError}
                     </p>
                   )}
 
                   {analyzed && (
-                    <form onSubmit={handlePublish} className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                    <form onSubmit={handlePublish} className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
                       <div className="flex items-center gap-3">
                         <img
                           src={analyzed.thumbnailUrl}
                           alt={analyzed.title}
                           referrerPolicy="no-referrer"
-                          className="h-14 w-24 rounded-lg object-cover border border-zinc-200"
+                          className="h-14 w-24 rounded-lg object-cover border border-zinc-200 dark:border-zinc-700"
                         />
-                        <div className="text-xs text-zinc-600">
-                          <p className="font-semibold text-blue-700">{t('aiDetectedBadge')}</p>
+                        <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                          <p className="font-semibold text-blue-700 dark:text-blue-400">{t('aiDetectedBadge')}</p>
                           <p className="font-mono">{analyzed.youtubeId}</p>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                          <label htmlFor="analyzed-title" className="block text-xs font-medium text-zinc-700 mb-1">
+                          <label htmlFor="analyzed-title" className="block text-xs font-medium text-zinc-700 mb-1 dark:text-zinc-300">
                             {t('trackTitleLabel')}
                           </label>
                           <input
@@ -402,11 +402,11 @@ export function OwnerStudioModal({
                             required
                             value={analyzed.title}
                             onChange={(e) => setAnalyzed({ ...analyzed, title: e.target.value })}
-                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                           />
                         </div>
                         <div>
-                          <label htmlFor="analyzed-artist" className="block text-xs font-medium text-zinc-700 mb-1">
+                          <label htmlFor="analyzed-artist" className="block text-xs font-medium text-zinc-700 mb-1 dark:text-zinc-300">
                             {t('artistLabel')}
                           </label>
                           <input
@@ -415,11 +415,11 @@ export function OwnerStudioModal({
                             required
                             value={analyzed.artist}
                             onChange={(e) => setAnalyzed({ ...analyzed, artist: e.target.value })}
-                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                           />
                         </div>
                         <div>
-                          <label htmlFor="analyzed-country" className="block text-xs font-medium text-zinc-700 mb-1">
+                          <label htmlFor="analyzed-country" className="block text-xs font-medium text-zinc-700 mb-1 dark:text-zinc-300">
                             {t('countryLabel')}{' '}
                             <span aria-hidden="true" className="ml-1">
                               {getCountryFlagEmoji(analyzed.countryCode)}
@@ -441,11 +441,11 @@ export function OwnerStudioModal({
                                 isRemix: Boolean(analyzed.isRemix || nextCode.includes(',')),
                               });
                             }}
-                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                           />
                         </div>
                         <div>
-                          <label htmlFor="analyzed-language" className="block text-xs font-medium text-zinc-700 mb-1">
+                          <label htmlFor="analyzed-language" className="block text-xs font-medium text-zinc-700 mb-1 dark:text-zinc-300">
                             {t('languageSungLabel')}
                           </label>
                           <input
@@ -464,11 +464,11 @@ export function OwnerStudioModal({
                                 isRemix: Boolean(analyzed.isRemix || nextLangCode.includes(',')),
                               });
                             }}
-                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                           />
                         </div>
                         <div className="sm:col-span-2">
-                          <label htmlFor="analyzed-genre" className="block text-xs font-medium text-zinc-700 mb-1">
+                          <label htmlFor="analyzed-genre" className="block text-xs font-medium text-zinc-700 mb-1 dark:text-zinc-300">
                             {t('genreLabel')}
                           </label>
                           <input
@@ -477,22 +477,22 @@ export function OwnerStudioModal({
                             required
                             value={analyzed.genre}
                             onChange={(e) => setAnalyzed({ ...analyzed, genre: e.target.value })}
-                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                           />
                         </div>
                         <div className="sm:col-span-2">
-                          <label className="flex items-center gap-2.5 text-xs font-medium text-zinc-800 cursor-pointer select-none">
+                          <label className="flex items-center gap-2.5 text-xs font-medium text-zinc-800 cursor-pointer select-none dark:text-zinc-200">
                             <input
                               type="checkbox"
                               checked={Boolean(analyzed.isRemix)}
                               onChange={(e) => setAnalyzed({ ...analyzed, isRemix: e.target.checked })}
-                              className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-600"
+                              className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-600 dark:border-zinc-600 dark:bg-zinc-900"
                             />
                             <span>{t('remixToggleLabel')}</span>
                           </label>
                         </div>
                         <div className="sm:col-span-2">
-                          <label htmlFor="analyzed-note" className="block text-xs font-medium text-zinc-700 mb-1">
+                          <label htmlFor="analyzed-note" className="block text-xs font-medium text-zinc-700 mb-1 dark:text-zinc-300">
                             {t('curatorNoteLabel')}
                           </label>
                           <input
@@ -500,7 +500,7 @@ export function OwnerStudioModal({
                             type="text"
                             value={analyzed.curatorNote}
                             onChange={(e) => setAnalyzed({ ...analyzed, curatorNote: e.target.value })}
-                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                           />
                         </div>
                       </div>
@@ -508,7 +508,7 @@ export function OwnerStudioModal({
                       <button
                         type="submit"
                         disabled={publishing}
-                        className="w-full rounded-xl bg-zinc-950 px-4 py-2.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 cursor-pointer"
+                        className="w-full rounded-xl bg-zinc-950 px-4 py-2.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 cursor-pointer dark:bg-blue-600 dark:hover:bg-blue-500"
                       >
                         {publishing ? t('publishing') : t('publishTrack')}
                       </button>
@@ -518,8 +518,8 @@ export function OwnerStudioModal({
               ) : (
                 <div className="space-y-5">
                   {hasDefaultPhotos && (
-                    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
-                      <p className="text-xs text-zinc-600">
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950">
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400">
                         Las fotos de ejemplo se reemplazan automáticamente al subir tu primera foto, o puedes quitarlas ahora.
                       </p>
                       <button
@@ -527,7 +527,7 @@ export function OwnerStudioModal({
                         onClick={() => {
                           onClearDefaultPhotos();
                         }}
-                        className="shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-red-50 hover:text-red-700 hover:border-red-200 cursor-pointer whitespace-nowrap"
+                        className="shrink-0 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-red-50 hover:text-red-700 hover:border-red-200 cursor-pointer whitespace-nowrap dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-red-950/50 dark:hover:text-red-300"
                       >
                         {t('clearDefaultPhotos')}
                       </button>
@@ -535,7 +535,7 @@ export function OwnerStudioModal({
                   )}
                   <form onSubmit={handleUploadPhotoSubmit} className="space-y-4">
                   <div>
-                    <label htmlFor="photo-file-input" className="block text-xs font-semibold text-zinc-800 mb-2">
+                    <label htmlFor="photo-file-input" className="block text-xs font-semibold text-zinc-800 mb-2 dark:text-zinc-200">
                       {t('photoFileLabel')}
                     </label>
                     <input
@@ -544,18 +544,18 @@ export function OwnerStudioModal({
                       accept="image/*"
                       required={!photoPreview}
                       onChange={(e) => handleFileChange(e.target.files?.[0])}
-                      className="block w-full text-xs text-zinc-600 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-950 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-zinc-800"
+                      className="block w-full text-xs text-zinc-600 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-950 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-zinc-800 dark:text-zinc-400 dark:file:bg-blue-600 dark:hover:file:bg-blue-500"
                     />
                   </div>
 
                   {photoPreview && (
-                    <div className="overflow-hidden rounded-xl border border-zinc-200 max-h-56">
+                    <div className="overflow-hidden rounded-xl border border-zinc-200 max-h-56 dark:border-zinc-700">
                       <img src={photoPreview} alt="Vista previa" className="h-full w-full object-cover" />
                     </div>
                   )}
 
                   <div>
-                    <label htmlFor="photo-caption-input" className="block text-xs font-semibold text-zinc-800 mb-1">
+                    <label htmlFor="photo-caption-input" className="block text-xs font-semibold text-zinc-800 mb-1 dark:text-zinc-200">
                       {t('photoCaptionLabel')}
                     </label>
                     <input
@@ -564,12 +564,12 @@ export function OwnerStudioModal({
                       maxLength={180}
                       value={photoCaption}
                       onChange={(e) => setPhotoCaption(e.target.value)}
-                      className="w-full rounded-xl border border-zinc-300 px-3.5 py-2 text-sm text-zinc-950 focus:border-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-sm text-zinc-950 focus:border-blue-600 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
                     />
                   </div>
 
                   {photoError && (
-                    <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
                       {photoError}
                     </p>
                   )}

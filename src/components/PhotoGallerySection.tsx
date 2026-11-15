@@ -88,20 +88,20 @@ export function PhotoGallerySection({
     : null;
 
   return (
-    <section id="photos" className="scroll-mt-20 border-t border-zinc-200 bg-[#F6F7F9]">
+    <section id="photos" className="scroll-mt-20 border-t border-zinc-200 bg-[#F6F7F9] transition-colors dark:border-zinc-800 dark:bg-zinc-900/70">
       <div className="mx-auto max-w-6xl px-6 py-12">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start lg:gap-10">
           {/* Left column: Joan Manuel's Photos */}
           <div className="lg:col-span-5 space-y-5">
             <div className="flex min-h-[2.25rem] items-center justify-between gap-4">
-              <h2 className="font-display text-2xl sm:text-[1.75rem] font-bold tracking-tight text-zinc-950">
+              <h2 className="font-display text-2xl sm:text-[1.75rem] font-bold tracking-tight text-zinc-950 dark:text-zinc-50">
                 {t('photosHeading')}
               </h2>
               {isOwner && (
                 <button
                   type="button"
                   onClick={onOpenUploadPhoto}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-600 whitespace-nowrap cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-600 whitespace-nowrap cursor-pointer dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-blue-500 dark:hover:text-white"
                 >
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{t('addPhoto')}</span>
@@ -110,8 +110,8 @@ export function PhotoGallerySection({
             </div>
 
             {photos.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center">
-                <p className="text-sm text-zinc-600">{t('emptyPhotosText')}</p>
+              <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center dark:border-zinc-700 dark:bg-zinc-900">
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">{t('emptyPhotosText')}</p>
                 {isOwner && (
                   <button
                     type="button"
@@ -132,7 +132,7 @@ export function PhotoGallerySection({
                 {photos.map((photo, idx) => (
                   <div
                     key={photo.id}
-                    className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-200"
+                    className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-800"
                   >
                     <button
                       type="button"
@@ -173,7 +173,7 @@ export function PhotoGallerySection({
           {/* Right column: AI Psychological & Musical Taste Profile */}
           <div className="lg:col-span-7 space-y-5">
             <div className="flex min-h-[2.25rem] flex-wrap items-center justify-between gap-3">
-              <h2 className="font-display text-2xl sm:text-[1.75rem] font-bold tracking-tight text-zinc-950 text-balance">
+              <h2 className="font-display text-2xl sm:text-[1.75rem] font-bold tracking-tight text-zinc-950 text-balance dark:text-zinc-50">
                 {t('profileHeading')}
               </h2>
               {isOwner && (
@@ -189,15 +189,15 @@ export function PhotoGallerySection({
               )}
             </div>
 
-            <div className="rounded-2xl border border-zinc-200 bg-white p-6 sm:p-8 space-y-6">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-6 sm:p-8 space-y-6 transition-colors dark:border-zinc-800 dark:bg-zinc-900">
               {profileError && (
-                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
                   {profileError}
                 </p>
               )}
 
               {savedNotice && (
-                <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
                   {t('profileSavedNotice')}
                 </p>
               )}
@@ -205,12 +205,12 @@ export function PhotoGallerySection({
               {/* Owner Draft Editing & Save Mode */}
               {isOwner && draft ? (
                 <div className="space-y-5">
-                  <p className="border-b border-zinc-100 pb-3 text-xs font-medium text-zinc-600">
+                  <p className="border-b border-zinc-100 pb-3 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
                     {t('profileAiNotice')}
                   </p>
 
                   {draft.aiQuotaExceeded && (
-                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 leading-relaxed">
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 leading-relaxed dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
                       {t('profileQuotaNotice')}
                     </p>
                   )}
@@ -218,7 +218,7 @@ export function PhotoGallerySection({
                   <div className="space-y-2">
                     <label
                       htmlFor="profile-personality-input"
-                      className="block font-display text-lg font-semibold tracking-tight text-zinc-900"
+                      className="block font-display text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
                     >
                       {t('profilePersonalityLabel')}
                     </label>
@@ -228,14 +228,14 @@ export function PhotoGallerySection({
                       maxLength={1450}
                       value={draft.personalitySummary}
                       onChange={(e) => setDraft({ ...draft, personalitySummary: e.target.value })}
-                      className="w-full rounded-xl border border-zinc-300 px-3.5 py-2.5 text-sm text-zinc-900 leading-relaxed focus:border-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm text-zinc-900 leading-relaxed focus:border-blue-600 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
                     />
                   </div>
 
                   <div className="space-y-2">
                     <label
                       htmlFor="profile-taste-input"
-                      className="block font-display text-lg font-semibold tracking-tight text-zinc-900"
+                      className="block font-display text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
                     >
                       {t('profileTasteLabel')}
                     </label>
@@ -245,14 +245,14 @@ export function PhotoGallerySection({
                       maxLength={1450}
                       value={draft.musicalTasteSummary}
                       onChange={(e) => setDraft({ ...draft, musicalTasteSummary: e.target.value })}
-                      className="w-full rounded-xl border border-zinc-300 px-3.5 py-2.5 text-sm text-zinc-900 leading-relaxed focus:border-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm text-zinc-900 leading-relaxed focus:border-blue-600 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
                     />
                   </div>
 
                   <div className="space-y-2">
                     <label
                       htmlFor="profile-traits-input"
-                      className="block font-display text-lg font-semibold tracking-tight text-zinc-900"
+                      className="block font-display text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
                     >
                       {t('profileTraitsLabel')}
                     </label>
@@ -269,19 +269,19 @@ export function PhotoGallerySection({
                             .slice(0, 6),
                         })
                       }
-                      className="w-full rounded-xl border border-zinc-300 px-3.5 py-2 text-sm text-zinc-900 focus:border-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-sm text-zinc-900 focus:border-blue-600 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
                     />
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <span className="text-xs text-zinc-500 font-mono tabular-nums">
+                    <span className="text-xs text-zinc-500 font-mono tabular-nums dark:text-zinc-400">
                       {t('profileBasedOnSongs')} {draft.trackCount}
                     </span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => setDraft(null)}
-                        className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                        className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 cursor-pointer dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                       >
                         {t('close')}
                       </button>
@@ -289,7 +289,7 @@ export function PhotoGallerySection({
                         type="button"
                         disabled={saving || draft.personalitySummary.trim().length < 10 || draft.musicalTasteSummary.trim().length < 10}
                         onClick={handleSaveClick}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-950 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-50 cursor-pointer"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-950 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-50 cursor-pointer dark:bg-blue-600 dark:hover:bg-blue-500"
                       >
                         <Save className="h-3.5 w-3.5" aria-hidden="true" />
                         <span>{saving ? t('profileSavingBtn') : t('profileSaveBtn')}</span>
@@ -299,11 +299,11 @@ export function PhotoGallerySection({
                 </div>
               ) : savedProfile && localizedProfile ? (
                 <div className="space-y-6">
-                  <div className="space-y-1.5 border-b border-zinc-100 pb-4">
-                    <p className="text-xs font-medium text-blue-700">
+                  <div className="space-y-1.5 border-b border-zinc-100 pb-4 dark:border-zinc-800">
+                    <p className="text-xs font-medium text-blue-700 dark:text-blue-400">
                       {t('profileAiNotice')}
                     </p>
-                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-zinc-500">
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
                       {formattedUpdatedDate && (
                         <>
                           <span>
@@ -320,32 +320,32 @@ export function PhotoGallerySection({
                   </div>
 
                   <article className="space-y-2">
-                    <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance">
+                    <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance dark:text-zinc-50">
                       {t('profilePersonalityLabel')}
                     </h3>
-                    <p className="text-[15px] text-zinc-700 leading-[1.65]">
+                    <p className="text-[15px] text-zinc-700 leading-[1.65] dark:text-zinc-300">
                       {localizedProfile.personalitySummary}
                     </p>
                   </article>
 
-                  <article className="space-y-2 border-t border-zinc-100 pt-5">
-                    <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance">
+                  <article className="space-y-2 border-t border-zinc-100 pt-5 dark:border-zinc-800">
+                    <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance dark:text-zinc-50">
                       {t('profileTasteLabel')}
                     </h3>
-                    <p className="text-[15px] text-zinc-700 leading-[1.65]">
+                    <p className="text-[15px] text-zinc-700 leading-[1.65] dark:text-zinc-300">
                       {localizedProfile.musicalTasteSummary}
                     </p>
                   </article>
 
                   {localizedProfile.keyTraits.length > 0 && (
-                    <article className="space-y-3 border-t border-zinc-100 pt-5">
-                      <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance">
+                    <article className="space-y-3 border-t border-zinc-100 pt-5 dark:border-zinc-800">
+                      <h3 className="font-display text-xl sm:text-[1.35rem] font-bold tracking-tight text-zinc-950 leading-snug text-balance dark:text-zinc-50">
                         {t('profileTraitsLabel')}
                       </h3>
-                      <ul className="grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2 text-sm font-medium text-zinc-800">
+                      <ul className="grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
                         {localizedProfile.keyTraits.map((trait, idx) => (
                           <li key={idx} className="flex items-baseline gap-2.5">
-                            <span className="font-mono text-blue-600 shrink-0" aria-hidden="true">
+                            <span className="font-mono text-blue-600 shrink-0 dark:text-blue-400" aria-hidden="true">
                               —
                             </span>
                             <span className="leading-snug">{trait}</span>
@@ -357,10 +357,10 @@ export function PhotoGallerySection({
                 </div>
               ) : (
                 <div className="py-5 text-center space-y-2">
-                  <p className="text-xs font-medium text-blue-700">
+                  <p className="text-xs font-medium text-blue-700 dark:text-blue-400">
                     {t('profileAiNotice')}
                   </p>
-                  <p className="text-sm text-zinc-600 leading-relaxed">
+                  <p className="text-sm text-zinc-600 leading-relaxed dark:text-zinc-400">
                     {isOwner ? t('profileEmptyOwner') : t('profileEmptyVisitor')}
                   </p>
                 </div>

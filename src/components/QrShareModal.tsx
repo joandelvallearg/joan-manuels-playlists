@@ -87,19 +87,19 @@ export function QrShareModal({
       aria-labelledby="qr-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
     >
-      <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <h2 id="qr-modal-title" className="font-display text-xl font-bold text-zinc-950">
+            <h2 id="qr-modal-title" className="font-display text-xl font-bold text-zinc-950 dark:text-zinc-50">
               {t('qrModalTitle')}
             </h2>
-            <p className="text-xs text-zinc-600 leading-relaxed">{t('qrModalSubtitle')}</p>
+            <p className="text-xs text-zinc-600 leading-relaxed dark:text-zinc-400">{t('qrModalSubtitle')}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label={t('close')}
-            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 cursor-pointer"
+            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 cursor-pointer dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -108,13 +108,13 @@ export function QrShareModal({
         <div
           ref={svgContainerRef}
           data-testid="qr-code-container"
-          className="flex items-center justify-center rounded-2xl border border-zinc-200 bg-white p-6"
+          className="flex items-center justify-center rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-700"
         >
           <QRCodeSVG value={shareUrl} size={208} level="M" includeMargin />
         </div>
 
         <div className="space-y-2">
-          <p className="break-all rounded-lg bg-zinc-100 px-3 py-2 font-mono text-xs text-zinc-700 text-center">
+          <p className="break-all rounded-lg bg-zinc-100 px-3 py-2 font-mono text-xs text-zinc-700 text-center dark:bg-zinc-950 dark:text-zinc-300">
             {shareUrl}
           </p>
 
@@ -124,7 +124,7 @@ export function QrShareModal({
                 <button
                   type="button"
                   onClick={handleResetLink}
-                  className="text-xs font-medium text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                  className="text-xs font-medium text-zinc-500 hover:text-zinc-900 cursor-pointer dark:text-zinc-400 dark:hover:text-zinc-200"
                 >
                   {t('qrResetLink')}
                 </button>
@@ -132,7 +132,7 @@ export function QrShareModal({
               <button
                 type="button"
                 onClick={() => setEditingLink((prev) => !prev)}
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 cursor-pointer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 cursor-pointer dark:text-blue-400 dark:hover:text-blue-300"
               >
                 <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>{t('qrEditLink')}</span>
@@ -147,11 +147,11 @@ export function QrShareModal({
                 value={draftLink}
                 onChange={(e) => setDraftLink(e.target.value)}
                 placeholder={t('qrCustomLinkPlaceholder')}
-                className="flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs text-zinc-900 focus:border-blue-600 focus:outline-none"
+                className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-900 focus:border-blue-600 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
               />
               <button
                 type="submit"
-                className="rounded-lg bg-zinc-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-600 cursor-pointer whitespace-nowrap"
+                className="rounded-lg bg-zinc-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-600 cursor-pointer whitespace-nowrap dark:bg-blue-600 dark:hover:bg-blue-500"
               >
                 OK
               </button>
@@ -160,7 +160,7 @@ export function QrShareModal({
         </div>
 
         {isPrivatePreview && (
-          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 leading-relaxed">
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 leading-relaxed dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
             {t('qrShareNote')}
           </p>
         )}
@@ -169,7 +169,7 @@ export function QrShareModal({
           <button
             type="button"
             onClick={handleCopy}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-600 transition-colors cursor-pointer whitespace-nowrap"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-600 transition-colors cursor-pointer whitespace-nowrap dark:bg-blue-600 dark:hover:bg-blue-500"
           >
             {copied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
             <span>{copied ? t('linkCopied') : t('copyLink')}</span>
@@ -177,7 +177,7 @@ export function QrShareModal({
           <button
             type="button"
             onClick={handleDownloadSvg}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 transition-colors cursor-pointer whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 transition-colors cursor-pointer whitespace-nowrap dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             <span>{t('downloadQr')}</span>

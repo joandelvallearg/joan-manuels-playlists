@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { AudioDeckPlayer, type AudioPlaybackStatus } from './components/AudioDeckPlayer';
 import { Header } from './components/Header';
 import { HeroPhotoSection } from './components/HeroPhotoSection';
 import { OwnerStudioModal } from './components/OwnerStudioModal';
@@ -44,6 +45,7 @@ import {
   OWNER_SPANISH_NAME,
   PUBLIC_SHARE_URL,
   type AnalyzedVideoResult,
+  type AudioPlayMode,
   type GeneratedProfileDraft,
   type Photo,
   type PlaylistGroup,
@@ -54,17 +56,23 @@ import {
   type TransliterationInfo,
 } from './types';
 import {
+  buildAudioQueue,
   buildFallbackPsychologicalProfile,
   filterTracks,
+  getAdjacentAudioTrack,
   groupTracksByCountry,
   groupTracksByLanguage,
   isPrivateDevUrl,
   normalizeCountryCodesList,
   normalizeLanguageCode,
   normalizeLanguageCodesList,
+  resolveInitialTheme,
   resolvePublicShareUrl,
+  THEME_STORAGE_KEY,
+  toggleThemeMode,
   translateCountryByCode,
   translateLanguageByCode,
+  type ThemeMode,
 } from './utils/musicLogic';
 import { translateTermsPublicFallback } from './utils/profileTranslation';
 
@@ -101,11 +109,29 @@ export default function App() {
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
   const [autoplayPlayer, setAutoplayPlayer] = useState(false);
 
+  const [audioTrackId, setAudioTrackId] = useState<string | null>(null);
+  const [audioAnchorTrackId, setAudioAnchorTrackId] = useState<string | null>(null);
+  const [audioPlayMode, setAudioPlayMode] = useState<AudioPlayMode>('ordered');
+  const [audioPlaybackStatus, setAudioPlaybackStatus] = useState<AudioPlaybackStatus>('stopped');
+  const [radioSeed, setRadioSeed] = useState<number>(1);
+
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [ownerModalOpen, setOwnerModalOpen] = useState(false);
   const [ownerModalTab, setOwnerModalTab] = useState<'video' | 'photo'>('video');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [serverPublicUrl, setServerPublicUrl] = useState('');
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    try {
+      const saved =
+        typeof window !== 'undefined' ? window.localStorage.getItem(THEME_STORAGE_KEY) : null;
+      const systemDark =
+        typeof window !== 'undefined' &&
+        Boolean(window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+      return resolveInitialTheme(saved, systemDark);
+    } catch {
+      return 'light';
+    }
+  });
   const [customShareUrl, setCustomShareUrl] = useState<string>(() => {
     try {
       return typeof window !== 'undefined' ? window.localStorage.getItem('jm_custom_share_url') ?? '' : '';
@@ -113,6 +139,24 @@ export default function App() {
       return '';
     }
   });
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+    }
+  }, [theme]);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = toggleThemeMode(prev);
+      try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, next);
+      } catch {
+        // Ignore storage errors
+      }
+      return next;
+    });
+  }, []);
 
   const isOwner = Boolean(
     user && user.emailVerified && user.email?.toLowerCase() === OWNER_EMAIL.toLowerCase()
@@ -533,7 +577,108 @@ export default function App() {
   const queue = filteredTracks.length > 0 ? filteredTracks : allTracks;
   const activeQueueIndex = activeTrack ? queue.findIndex((tr) => tr.id === activeTrack.id) : -1;
 
+  const currentAudioTrack = useMemo(() => {
+    if (audioTrackId) {
+      const found = allTracks.find((tr) => tr.id === audioTrackId);
+      if (found) return found;
+    }
+    return allTracks[0] ?? null;
+  }, [allTracks, audioTrackId]);
+
+  const audioAnchorTrack = useMemo(() => {
+    if (audioAnchorTrackId) {
+      const found = allTracks.find((tr) => tr.id === audioAnchorTrackId);
+      if (found) return found;
+    }
+    return currentAudioTrack;
+  }, [allTracks, audioAnchorTrackId, currentAudioTrack]);
+
+  const audioQueue = useMemo(
+    () => buildAudioQueue(allTracks, audioAnchorTrack, audioPlayMode, radioSeed),
+    [allTracks, audioAnchorTrack, audioPlayMode, radioSeed]
+  );
+
+  const handleAudioPlayPause = useCallback(() => {
+    if (!currentAudioTrack) return;
+    setActiveTrackId(null);
+    setAudioTrackId(currentAudioTrack.id);
+    if (!audioAnchorTrackId) setAudioAnchorTrackId(currentAudioTrack.id);
+    setAudioPlaybackStatus((prev) => (prev === 'playing' ? 'paused' : 'playing'));
+  }, [currentAudioTrack, audioAnchorTrackId]);
+
+  const handleAudioStop = useCallback(() => {
+    setAudioPlaybackStatus('stopped');
+  }, []);
+
+  const handleAudioPrevious = useCallback(() => {
+    const prevTrack = getAdjacentAudioTrack(audioQueue, currentAudioTrack?.id ?? null, -1, true);
+    if (!prevTrack) return;
+    setActiveTrackId(null);
+    setAudioTrackId(prevTrack.id);
+    if (audioPlayMode === 'ordered') {
+      setAudioAnchorTrackId(prevTrack.id);
+    }
+    setAudioPlaybackStatus('playing');
+  }, [audioQueue, currentAudioTrack?.id, audioPlayMode]);
+
+  const handleAudioNext = useCallback(() => {
+    const nextTrack = getAdjacentAudioTrack(audioQueue, currentAudioTrack?.id ?? null, 1, true);
+    if (!nextTrack) return;
+    setActiveTrackId(null);
+    setAudioTrackId(nextTrack.id);
+    if (audioPlayMode === 'ordered') {
+      setAudioAnchorTrackId(nextTrack.id);
+    }
+    setAudioPlaybackStatus('playing');
+  }, [audioQueue, currentAudioTrack?.id, audioPlayMode]);
+
+  const handleAudioSelectMode = useCallback(
+    (nextMode: AudioPlayMode) => {
+      if (!currentAudioTrack) return;
+      setActiveTrackId(null);
+      setAudioTrackId(currentAudioTrack.id);
+      setAudioAnchorTrackId(currentAudioTrack.id);
+      setAudioPlayMode(nextMode);
+      if (nextMode === 'radio') {
+        setRadioSeed((prev) => prev + 1);
+      }
+      if (nextMode !== 'ordered') {
+        setAudioPlaybackStatus('playing');
+      }
+    },
+    [currentAudioTrack]
+  );
+
+  const handleAudioTrackEnded = useCallback(() => {
+    const currentIdx = currentAudioTrack
+      ? audioQueue.findIndex((tr) => tr.id === currentAudioTrack.id)
+      : -1;
+    const isAtEndOfRadio =
+      audioPlayMode === 'radio' && currentIdx >= 0 && currentIdx === audioQueue.length - 1;
+
+    if (isAtEndOfRadio) {
+      const nextSeed = radioSeed + 1;
+      setRadioSeed(nextSeed);
+      const nextQueue = buildAudioQueue(allTracks, currentAudioTrack, 'radio', nextSeed);
+      const candidate = nextQueue.find((tr) => tr.id !== currentAudioTrack?.id) ?? nextQueue[0];
+      if (candidate) {
+        setAudioTrackId(candidate.id);
+        setAudioAnchorTrackId(candidate.id);
+        setAudioPlaybackStatus('playing');
+      }
+      return;
+    }
+
+    const nextTrack = getAdjacentAudioTrack(audioQueue, currentAudioTrack?.id ?? null, 1, true);
+    if (!nextTrack) return;
+    setAudioTrackId(nextTrack.id);
+    setAudioPlaybackStatus('playing');
+  }, [audioPlayMode, audioQueue, currentAudioTrack, radioSeed, allTracks]);
+
   const handlePlayTrack = (track: Track) => {
+    setAudioPlaybackStatus((prev) => (prev === 'playing' ? 'paused' : prev));
+    setAudioTrackId(track.id);
+    setAudioAnchorTrackId(track.id);
     setActiveTrackId(track.id);
     setAutoplayPlayer(true);
     document.getElementById('player')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -542,6 +687,9 @@ export default function App() {
   const handlePlayPlaylist = (group: PlaylistGroup) => {
     setSelectedKey(group.key);
     if (group.tracks[0]) {
+      setAudioPlaybackStatus((prev) => (prev === 'playing' ? 'paused' : prev));
+      setAudioTrackId(group.tracks[0].id);
+      setAudioAnchorTrackId(group.tracks[0].id);
       setActiveTrackId(group.tracks[0].id);
       setAutoplayPlayer(true);
       document.getElementById('player')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -810,8 +958,13 @@ export default function App() {
   }, [selectedKey, mode, countryGroups, languageGroups, translateTerm]);
 
   return (
-    <div className="min-h-screen bg-white text-zinc-950 flex flex-col">
-      <Header t={t} onOpenQr={() => setQrModalOpen(true)} />
+    <div className="min-h-screen bg-white text-zinc-950 flex flex-col transition-colors dark:bg-zinc-950 dark:text-zinc-50">
+      <Header
+        t={t}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        onOpenQr={() => setQrModalOpen(true)}
+      />
 
       <main className="flex-1">
         <HeroPhotoSection
@@ -837,6 +990,22 @@ export default function App() {
           onPrevious={handlePrevious}
           onNext={handleNext}
           onClosePlayer={() => setActiveTrackId(null)}
+          translateTerm={translateTerm}
+        />
+
+        <AudioDeckPlayer
+          t={t}
+          activeTrack={currentAudioTrack}
+          queue={audioQueue}
+          playMode={audioPlayMode}
+          playbackStatus={audioPlaybackStatus}
+          onPlayPause={handleAudioPlayPause}
+          onStop={handleAudioStop}
+          onPrevious={handleAudioPrevious}
+          onNext={handleAudioNext}
+          onSelectMode={handleAudioSelectMode}
+          onTrackEnded={handleAudioTrackEnded}
+          onSyncExternalPlaybackState={setAudioPlaybackStatus}
           translateTerm={translateTerm}
         />
 
@@ -886,30 +1055,30 @@ export default function App() {
         />
 
         {/* Inline QR Cross-Device Save Section */}
-        <section className="border-t border-zinc-200 bg-[#F6F7F9]">
+        <section className="border-t border-zinc-200 bg-[#F6F7F9] transition-colors dark:border-zinc-800 dark:bg-zinc-900/70">
           <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-6 py-10 sm:flex-row">
             <div className="max-w-lg space-y-2 text-center sm:text-left">
-              <h2 className="font-display text-2xl font-bold text-zinc-950">{t('qrModalTitle')}</h2>
-              <p className="text-sm text-zinc-600 leading-relaxed">{t('qrModalSubtitle')}</p>
+              <h2 className="font-display text-2xl font-bold text-zinc-950 dark:text-zinc-50">{t('qrModalTitle')}</h2>
+              <p className="text-sm text-zinc-600 leading-relaxed dark:text-zinc-400">{t('qrModalSubtitle')}</p>
               <button
                 type="button"
                 onClick={() => setQrModalOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-100 cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 hover:bg-zinc-100 cursor-pointer dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
               >
                 <QrCode className="h-4 w-4" aria-hidden="true" />
                 <span>{t('navQr')}</span>
               </button>
             </div>
-            <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-xs shrink-0">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-xs shrink-0 dark:border-zinc-700">
               <QRCodeSVG value={shareUrl} size={112} level="M" />
             </div>
           </div>
         </section>
       </main>
 
-      <footer className="border-t border-zinc-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-6 text-xs text-zinc-500">
-          <p className="font-medium text-zinc-700">
+      <footer className="border-t border-zinc-200 bg-white transition-colors dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-6 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="font-medium text-zinc-700 dark:text-zinc-300">
             {OWNER_SPANISH_NAME} · {t('heroSubtitle')}
           </p>
           <p className="font-mono tabular-nums">

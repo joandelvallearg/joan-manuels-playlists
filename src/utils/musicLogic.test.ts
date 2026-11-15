@@ -1,10 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildAudioQueue,
   buildFallbackPsychologicalProfile,
+  computeGenreSimilarityScore,
   extractYouTubeId,
   filterTracks,
+  formatAudioTime,
   formatProfileDate,
+  getAdjacentAudioTrack,
   getCountryFlagEmoji,
   getYouTubeEmbedUrl,
   groupTracksByCountry,
@@ -12,8 +16,10 @@ import {
   isPrivateDevUrl,
   normalizeLanguageCode,
   resolveCountryCode,
+  resolveInitialTheme,
   resolveLanguageCode,
   resolvePublicShareUrl,
+  toggleThemeMode,
   translateCountryByCode,
   translateLanguageByCode,
 } from './musicLogic';
@@ -292,3 +298,126 @@ test('translateTermsPublicFallback batches >30 video comments/descriptions, pres
   assert.equal(translated['  Nota con espacios  '], 'EN:Nota con espacios');
   assert.equal(translated['Nota con espacios'], 'EN:Nota con espacios');
 });
+
+test('resolveInitialTheme and toggleThemeMode respect stored preference and system fallback', () => {
+  assert.equal(resolveInitialTheme('dark', false), 'dark');
+  assert.equal(resolveInitialTheme('light', true), 'light');
+  assert.equal(resolveInitialTheme(null, true), 'dark');
+  assert.equal(resolveInitialTheme(undefined, false), 'light');
+  assert.equal(resolveInitialTheme('unexpected', false), 'light');
+  assert.equal(toggleThemeMode('light'), 'dark');
+  assert.equal(toggleThemeMode('dark'), 'light');
+});
+
+test('buildAudioQueue builds ordered, radio, similar-genre, same-language, and same-genre queues', () => {
+  const catalog: Track[] = [
+    ...SAMPLE_TRACKS,
+    {
+      id: 't4',
+      ownerId: 'owner1',
+      youtubeId: 'abc11111111',
+      youtubeUrl: 'https://www.youtube.com/watch?v=abc11111111',
+      title: 'Pop Frances Demo',
+      artist: 'Emma Peters',
+      country: 'Francia',
+      countryCode: 'FR',
+      language: 'Francés',
+      languageCode: 'fr',
+      genre: 'Pop Electrónica (Remix)',
+      isRemix: true,
+      thumbnailUrl: 'https://i.ytimg.com/vi/abc11111111/hqdefault.jpg',
+    },
+    {
+      id: 't5',
+      ownerId: 'owner1',
+      youtubeId: 'abc22222222',
+      youtubeUrl: 'https://www.youtube.com/watch?v=abc22222222',
+      title: 'Bilingual Pop Demo',
+      artist: 'Artist A & B',
+      country: 'Argentina / Brasil',
+      countryCode: 'AR,BR',
+      language: 'Español / Portugués',
+      languageCode: 'es,pt',
+      genre: 'Pop Electrónico',
+      thumbnailUrl: 'https://i.ytimg.com/vi/abc22222222/hqdefault.jpg',
+    },
+    {
+      id: 't6',
+      ownerId: 'owner1',
+      youtubeId: 'abc33333333',
+      youtubeUrl: 'https://www.youtube.com/watch?v=abc33333333',
+      title: 'River Flows in You',
+      artist: 'Yiruma',
+      country: 'Corea del Sur',
+      countryCode: 'KR',
+      language: 'Instrumental',
+      languageCode: 'zxx',
+      genre: 'Piano Contemporáneo',
+      thumbnailUrl: 'https://i.ytimg.com/vi/abc33333333/hqdefault.jpg',
+    },
+  ];
+
+  // Ordered preserves catalog order
+  assert.deepEqual(
+    buildAudioQueue(catalog, catalog[2], 'ordered').map((t) => t.id),
+    catalog.map((t) => t.id)
+  );
+
+  // Radio keeps anchor first and preserves all tracks
+  const radioA = buildAudioQueue(catalog, catalog[1], 'radio', 42);
+  const radioB = buildAudioQueue(catalog, catalog[1], 'radio', 99);
+  assert.equal(radioA[0].id, 't2');
+  assert.equal(radioA.length, catalog.length);
+  assert.notDeepEqual(
+    radioA.map((t) => t.id),
+    radioB.map((t) => t.id)
+  );
+
+  // Same language matches bilingual codes too (es + es,pt)
+  const esQueue = buildAudioQueue(catalog, catalog[0], 'same-language');
+  assert.deepEqual(
+    esQueue.map((t) => t.id),
+    ['t1', 't3', 't5']
+  );
+
+  // Instrumental zxx matches instrumental only
+  const instQueue = buildAudioQueue(catalog, catalog[5], 'same-language');
+  assert.deepEqual(
+    instQueue.map((t) => t.id),
+    ['t6']
+  );
+
+  // Same genre ignores case, accents, and (Remix) tag
+  const popElectroQueue = buildAudioQueue(catalog, catalog[4], 'same-genre');
+  assert.deepEqual(
+    popElectroQueue.map((t) => t.id),
+    ['t5']
+  );
+  const sameRockQueue = buildAudioQueue(
+    [
+      ...catalog,
+      { ...catalog[0], id: 't7', title: 'Otra Rock', genre: 'rock nacional (Remix)' },
+    ],
+    catalog[0],
+    'same-genre'
+  );
+  assert.deepEqual(
+    sameRockQueue.map((t) => t.id),
+    ['t1', 't7']
+  );
+
+  // Similar genre links Rock Nacional -> Rock Alternativo and excludes unrelated Piano Contemporáneo
+  const similarRockQueue = buildAudioQueue(catalog, catalog[0], 'similar-genre');
+  assert.ok(similarRockQueue.some((t) => t.id === 't3'));
+  assert.ok(!similarRockQueue.some((t) => t.id === 't6'));
+  assert.ok(computeGenreSimilarityScore('Pop Electrónico', 'City Pop') > 0);
+
+  // Adjacent track navigation + wrap-around + time formatting
+  assert.equal(getAdjacentAudioTrack(esQueue, 't1', 1, true)?.id, 't3');
+  assert.equal(getAdjacentAudioTrack(esQueue, 't5', 1, true)?.id, 't1');
+  assert.equal(getAdjacentAudioTrack(esQueue, 't1', -1, true)?.id, 't5');
+  assert.equal(formatAudioTime(0), '0:00');
+  assert.equal(formatAudioTime(-5), '0:00');
+  assert.equal(formatAudioTime(125.9), '2:05');
+});
+
