@@ -234,12 +234,16 @@ async function createApp() {
         '  4) List BOTH singing languages in "language" separated by " / " in Spanish (e.g. "Español / Inglés", "Español / Francés").',
         '  5) List BOTH 2-letter lowercase ISO 639-1 codes in "languageCode" separated by a comma without spaces (e.g. "es,en", "es,fr").',
         '  6) Mention "Remix" in "genre" if appropriate (e.g. "Reggaetón Remix", "Pop Urbano (Remix)").',
+        '- IMPORTANT FOR INSTRUMENTAL TRACKS (no singing / no lyrics, such as piano, classical, soundtrack, guitar, jazz, or electronic instrumental):',
+        '  1) Set language = "Instrumental" and languageCode = "zxx".',
+        '  2) Classify "country" and "countryCode" by the performer or composer\'s country of origin (e.g. "Corea del Sur" / "KR" for Yiruma, "Italia" / "IT" for Ludovico Einaudi).',
+        '  3) Do NOT mark isRemix = true solely because there are no lyrics; only set isRemix = true if it is genuinely a remix or a collaboration between 2 countries.',
         '- For single-country, single-language songs: set isRemix = false (unless the track itself is clearly a remix), and put 1 country, 1 countryCode ("AR"), 1 language, and 1 languageCode ("es").',
         '- country: Country name(s) in Spanish (e.g. "Argentina", "Japón", or "España / Estados Unidos" for two countries).',
         '- countryCode: 1 or 2 uppercase 2-letter ISO 3166-1 alpha-2 codes separated by "," (e.g. "AR" or "ES,US").',
-        '- language: Singing language(s) in Spanish (e.g. "Español", "Japonés", or "Español / Inglés" for two languages, or "Instrumental").',
+        '- language: Singing language(s) in Spanish (e.g. "Español", "Japonés", or "Español / Inglés" for two languages, or "Instrumental" when there is no singing).',
         '- languageCode: 1 or 2 lowercase ISO 639-1 codes separated by "," (e.g. "es", "ja", "es,en", or "zxx" for instrumental).',
-        '- genre: Concise music genre in Spanish (e.g. "Rock Nacional", "City Pop", "Chanson", "Pop Urbano (Remix)").',
+        '- genre: Concise music genre in Spanish (e.g. "Rock Nacional", "City Pop", "Piano Contemporáneo", "Pop Urbano (Remix)").',
         '- curatorNote: A warm 1-sentence editorial note in Spanish about the song or its sound (max 180 chars).',
       ].join('\n');
 
@@ -251,7 +255,7 @@ async function createApp() {
           ],
           contents: prompt,
           systemInstruction:
-            'You are a musicologist and ethnomusicology archivist. Identify the song title, artist, country (or two countries for collaborations/remixes), singing language (or two languages for bilingual tracks), remix status, and musical genre accurately. Return valid JSON only.',
+            'You are a musicologist and ethnomusicology archivist. Identify the song title, artist, country (or two countries for collaborations/remixes), singing language (or "Instrumental" with code "zxx" when there are no vocals/lyrics), remix status, and musical genre accurately. Return valid JSON only.',
           responseSchema: {
             type: Type.OBJECT,
             properties: {
@@ -291,15 +295,24 @@ async function createApp() {
         ).slice(0, 2);
         const cleanCountryCode = countryCodes.length > 0 ? countryCodes.join(',') : 'AR';
 
-        const langCodes = Array.from(
-          new Set(
-            (parsed.languageCode || 'es')
-              .split(/[,/;&\s]+/)
-              .map((c) => c.trim().toLowerCase().replace(/[^a-z-]/g, ''))
-              .filter((c) => c.length >= 2 && c.length <= 10)
-          )
-        ).slice(0, 2);
+        const looksInstrumental = /\b(instrumental|sin letra|sin voz|no lyrics|no vocals|zxx)\b/i.test(
+          `${parsed.language || ''} ${parsed.languageCode || ''}`
+        );
+
+        const langCodes = looksInstrumental
+          ? ['zxx']
+          : Array.from(
+              new Set(
+                (parsed.languageCode || 'es')
+                  .split(/[,/;&\s]+/)
+                  .map((c) => c.trim().toLowerCase().replace(/[^a-z-]/g, ''))
+                  .filter((c) => c.length >= 2 && c.length <= 10)
+              )
+            ).slice(0, 2);
         const cleanLangCode = langCodes.length > 0 ? langCodes.join(',') : 'es';
+        const finalLanguage = looksInstrumental
+          ? 'Instrumental'
+          : (parsed.language || 'Español').slice(0, 70);
 
         const finalTitle = (parsed.title || fallbackSplit.title).slice(0, 180);
         const finalGenre = (parsed.genre || 'Música del Mundo').slice(0, 70);
@@ -318,7 +331,7 @@ async function createApp() {
           artist: (parsed.artist || fallbackSplit.artist).slice(0, 140),
           country: (parsed.country || 'Internacional').slice(0, 90),
           countryCode: cleanCountryCode,
-          language: (parsed.language || 'Español').slice(0, 70),
+          language: finalLanguage,
           languageCode: cleanLangCode,
           genre: finalGenre,
           isRemix: isRemixDetected,

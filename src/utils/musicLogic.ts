@@ -230,12 +230,37 @@ export function translateCountryByCode(countryCode: string, targetLang: string):
   }
 }
 
+const INSTRUMENTAL_LABELS: Record<string, string> = {
+  es: 'Instrumental',
+  en: 'Instrumental',
+  fr: 'Instrumental',
+  pt: 'Instrumental',
+  de: 'Instrumental',
+  it: 'Strumentale',
+  ja: 'インストゥルメンタル',
+  ko: '연주곡',
+  ru: 'Инструментал',
+  ar: 'موسيقى آلية',
+  zh: '纯音乐',
+  'zh-tw': '純音樂',
+  hi: 'वाद्य संगीत',
+};
+
 export function translateLanguageByCode(languageCode: string, targetLang: string): string | null {
-  const codes = languageCode
+  const rawCodes = languageCode
     .split(/[,/;&\s]+/)
     .map((c) => c.trim().toLowerCase())
-    .filter((c) => c && c !== 'zxx')
+    .filter(Boolean)
     .slice(0, 2);
+  if (rawCodes.length === 0) return null;
+
+  const langKey = targetLang.trim().toLowerCase();
+  const baseLang = langKey.split('-')[0];
+  if (rawCodes.length === 1 && rawCodes[0] === 'zxx') {
+    return INSTRUMENTAL_LABELS[langKey] || INSTRUMENTAL_LABELS[baseLang] || 'Instrumental';
+  }
+
+  const codes = rawCodes.filter((c) => c !== 'zxx');
   if (codes.length === 0) return null;
   try {
     const dn = new Intl.DisplayNames([targetLang], { type: 'language' });
@@ -347,6 +372,14 @@ const LANGUAGE_NAME_TO_CODE: Record<string, string> = {
   turco: 'tr',
   turkish: 'tr',
   instrumental: 'zxx',
+  'música instrumental': 'zxx',
+  'musica instrumental': 'zxx',
+  'instrumental music': 'zxx',
+  'sin letra': 'zxx',
+  'sin voz': 'zxx',
+  'no lyrics': 'zxx',
+  strumentale: 'zxx',
+  zxx: 'zxx',
 };
 
 export function resolveCountryCode(countryName: string, fallback = 'UN'): string {
@@ -464,27 +497,42 @@ export function buildFallbackPsychologicalProfile(tracks: Track[]): GeneratedPro
 
   const countries = Array.from(new Set(tracks.map((t) => t.country).filter(Boolean)));
   const languages = Array.from(new Set(tracks.map((t) => t.language).filter(Boolean)));
+  const sungLanguages = languages.filter(
+    (l) => !/\b(instrumental|sin letra|sin voz)\b/i.test(l)
+  );
+  const hasInstrumental = tracks.some(
+    (t) => t.languageCode === 'zxx' || /\binstrumental\b/i.test(t.language)
+  );
   const genres = Array.from(new Set(tracks.map((t) => t.genre).filter(Boolean)));
   const sampleArtists = Array.from(new Set(tracks.map((t) => t.artist).filter(Boolean))).slice(0, 4);
 
   const multiCountry = countries.length >= 2;
-  const multiLang = languages.length >= 2;
+  const multiLang = sungLanguages.length >= 2;
+
+  const languageSentence =
+    sungLanguages.length === 0 && hasInstrumental
+      ? 'Su afinidad por piezas puramente instrumentales revela a alguien introspectivo y sensible a los matices sonoros, capaz de conectar con la emoción de una melodía sin necesidad de palabras.'
+      : multiLang
+        ? `Escuchar voces en ${sungLanguages.slice(0, 4).join(', ')}${hasInstrumental ? ' junto a obras instrumentales' : ''} sugiere a alguien empático que presta atención a la atmósfera, la cadencia y el sentimiento detrás de cada canción más allá del idioma.`
+        : `Su elección refleja intensidad emocional y gusto por las letras y melodías${hasInstrumental ? ' —incluida la expresión instrumental sin palabras—' : ''} que acompañan momentos de introspección y disfrute genuino.`;
 
   const personalitySummary = [
     multiCountry
       ? `Joan Manuel se perfila como un hombre de mente abierta, observador y con una notable curiosidad por mundos emocionales distintos al propio, conectando referencias de ${countries.slice(0, 4).join(', ')}.`
       : `Joan Manuel muestra una personalidad definida, fiel a sus convicciones y con un vínculo muy personal con la identidad cultural de ${countries[0] || 'su entorno'}.`,
-    multiLang
-      ? `Escuchar voces en ${languages.slice(0, 4).join(', ')} sugiere a alguien empático que presta atención a la atmósfera, la cadencia y el sentimiento detrás de cada canción más allá del idioma.`
-      : `Su elección refleja intensidad emocional y gusto por las letras y melodías que acompañan momentos de introspección y disfrute genuino.`,
+    languageSentence,
     `A partir de esa sensibilidad estética, resulta natural imaginarlo disfrutando de artes narrativas y visuales como el cine o la fotografía con carácter propio, rutinas que combinan caminatas tranquilas o pausas con café con momentos de energía social, y compañías auténticas con quienes compartir conversaciones honestas sin superficialidad.`,
   ].join(' ');
 
-  const musicalTasteSummary = `A partir de sus ${count} canciones actuales (con artistas como ${sampleArtists.join(', ')}), sus gustos combinan ${genres.slice(0, 5).join(', ')}. Predomina una curaduría con carácter propio: canciones con personalidad marcada, energía rítmica o melancolía elegante pensadas para escucharse con atención y compartirse.`;
+  const musicalTasteSummary = `A partir de sus ${count} canciones actuales (con artistas como ${sampleArtists.join(', ')}), sus gustos combinan ${genres.slice(0, 5).join(', ')}. Predomina una curaduría con carácter propio: piezas con personalidad marcada, energía rítmica o melancolía elegante pensadas para escucharse con atención y compartirse.`;
 
   const keyTraits: string[] = [
     multiCountry ? 'Espíritu cosmopolita y curioso' : 'Identidad musical bien definida',
-    multiLang ? `Sensibilidad multilingüe (${languages.slice(0, 3).join(', ')})` : `Apego a la expresión en ${languages[0] || 'su idioma'}`,
+    sungLanguages.length === 0 && hasInstrumental
+      ? 'Sensibilidad hacia la música instrumental y atmosférica'
+      : multiLang
+        ? `Sensibilidad multilingüe (${sungLanguages.slice(0, 3).join(', ')})`
+        : `Apego a la expresión en ${sungLanguages[0] || 'su idioma'}`,
     genres.length >= 2 ? `Paladar ecléctico (${genres.slice(0, 2).join(' y ')})` : `Afinidad por ${genres[0] || 'sonidos con carácter'}`,
     'Curador atento al clima emocional de cada tema',
   ];

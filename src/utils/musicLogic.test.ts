@@ -159,7 +159,9 @@ test('translateCountryByCode and translateLanguageByCode localize codes via Intl
   assert.equal(translateCountryByCode('FR', 'es'), 'Francia');
   assert.equal(translateLanguageByCode('ru', 'en'), 'Russian');
   assert.equal(translateLanguageByCode('fr', 'es'), 'Francés');
-  assert.equal(translateLanguageByCode('zxx', 'en'), null);
+  assert.equal(translateLanguageByCode('zxx', 'en'), 'Instrumental');
+  assert.equal(translateLanguageByCode('zxx', 'ko'), '연주곡');
+  assert.equal(translateLanguageByCode('zxx', 'ru'), 'Инструментал');
 });
 
 test('resolveCountryCode and resolveLanguageCode map common names to ISO codes', () => {
@@ -167,6 +169,8 @@ test('resolveCountryCode and resolveLanguageCode map common names to ISO codes',
   assert.equal(resolveCountryCode('Francia'), 'FR');
   assert.equal(resolveLanguageCode('Ruso'), 'ru');
   assert.equal(resolveLanguageCode('Francés'), 'fr');
+  assert.equal(resolveLanguageCode('Sin letra'), 'zxx');
+  assert.equal(resolveLanguageCode('Instrumental'), 'zxx');
 });
 
 test('resolvePublicShareUrl defaults to published Vercel URL and supports custom override', () => {
