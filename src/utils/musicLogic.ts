@@ -825,6 +825,20 @@ export function formatAudioTime(rawSeconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+export function shouldShowVideoGallery(opts: {
+  mode: PlaylistMode;
+  selectedKey: string | null;
+  genre: string | null;
+  query: string;
+}): boolean {
+  return Boolean(
+    opts.selectedKey ||
+      opts.mode === 'all' ||
+      (opts.genre && opts.genre.trim()) ||
+      opts.query.trim()
+  );
+}
+
 
 
 

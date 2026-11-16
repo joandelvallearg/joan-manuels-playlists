@@ -91,17 +91,17 @@ export function PhotoGallerySection({
     <section id="photos" className="scroll-mt-20 border-t border-zinc-200 bg-[#F6F7F9] transition-colors dark:border-zinc-800 dark:bg-zinc-900/70">
       <div className="mx-auto max-w-6xl px-6 py-12">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start lg:gap-10">
-          {/* Left column: Joan Manuel's Photos */}
-          <div className="lg:col-span-5 space-y-5">
+          {/* Left column: Joan Manuel's Photos (compact & uncropped) */}
+          <div className="lg:col-span-4 space-y-4">
             <div className="flex min-h-[2.25rem] items-center justify-between gap-4">
-              <h2 className="font-display text-2xl sm:text-[1.75rem] font-bold tracking-tight text-zinc-950 dark:text-zinc-50">
+              <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">
                 {t('photosHeading')}
               </h2>
               {isOwner && (
                 <button
                   type="button"
                   onClick={onOpenUploadPhoto}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-600 whitespace-nowrap cursor-pointer dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-blue-500 dark:hover:text-white"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-950 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-600 whitespace-nowrap cursor-pointer dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-blue-500 dark:hover:text-white"
                 >
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{t('addPhoto')}</span>
@@ -110,7 +110,7 @@ export function PhotoGallerySection({
             </div>
 
             {photos.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center dark:border-zinc-700 dark:bg-zinc-900">
+              <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-white p-8 text-center dark:border-zinc-700 dark:bg-zinc-900">
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">{t('emptyPhotosText')}</p>
                 {isOwner && (
                   <button
@@ -125,33 +125,39 @@ export function PhotoGallerySection({
               </div>
             ) : (
               <div
-                className={`grid grid-cols-1 gap-4 ${
-                  photos.length === 1 ? 'sm:grid-cols-1' : 'sm:grid-cols-2'
-                }`}
+                className={
+                  photos.length === 1
+                    ? 'flex justify-start'
+                    : 'flex flex-wrap items-start gap-3'
+                }
               >
                 {photos.map((photo, idx) => (
                   <div
                     key={photo.id}
-                    className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-800"
+                    data-testid="photo-card"
+                    className={`group relative overflow-hidden rounded-xl border border-zinc-200/90 bg-white p-1.5 transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 ${
+                      photos.length === 1 ? 'w-fit max-w-[180px]' : 'w-fit max-w-[160px]'
+                    }`}
                   >
                     <button
                       type="button"
                       onClick={() => onSelectPhoto(idx)}
                       aria-label={photo.caption || `${t('photosHeading')} ${idx + 1}`}
-                      className="block h-full w-full cursor-pointer text-left"
+                      className="block cursor-pointer text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 rounded-lg"
                     >
                       <img
+                        data-testid="photo-img"
                         src={photo.imageData}
                         alt={photo.caption || OWNER_SPANISH_NAME}
                         referrerPolicy="no-referrer"
-                        className="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]"
+                        className={`block h-auto w-auto max-w-full rounded-lg object-contain transition-transform duration-300 group-hover:scale-[1.02] ${
+                          photos.length === 1 ? 'max-h-52' : 'max-h-40'
+                        }`}
                       />
                       {photo.caption && (
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent p-4 pt-10">
-                          <p className="text-xs font-medium text-white line-clamp-2">
-                            {translateTerm(photo.caption)}
-                          </p>
-                        </div>
+                        <p className="mt-1.5 max-w-[164px] px-0.5 text-[11px] font-medium text-zinc-600 leading-snug line-clamp-2 dark:text-zinc-400">
+                          {translateTerm(photo.caption)}
+                        </p>
                       )}
                     </button>
                     {isOwner && (
@@ -159,9 +165,9 @@ export function PhotoGallerySection({
                         type="button"
                         onClick={() => onDeletePhoto(photo)}
                         aria-label={`${t('deletePhoto')}: ${photo.caption || idx + 1}`}
-                        className="absolute right-2.5 top-2.5 rounded-lg bg-black/75 p-2 text-white hover:bg-red-600 transition-colors cursor-pointer"
+                        className="absolute right-2.5 top-2.5 rounded-lg bg-black/75 p-1.5 text-white hover:bg-red-600 transition-colors cursor-pointer"
                       >
-                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        <Trash2 className="h-3 w-3" aria-hidden="true" />
                       </button>
                     )}
                   </div>
@@ -171,7 +177,7 @@ export function PhotoGallerySection({
           </div>
 
           {/* Right column: AI Psychological & Musical Taste Profile */}
-          <div className="lg:col-span-7 space-y-5">
+          <div className="lg:col-span-8 space-y-5">
             <div className="flex min-h-[2.25rem] flex-wrap items-center justify-between gap-3">
               <h2 className="font-display text-2xl sm:text-[1.75rem] font-bold tracking-tight text-zinc-950 text-balance dark:text-zinc-50">
                 {t('profileHeading')}

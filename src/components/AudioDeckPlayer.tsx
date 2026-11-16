@@ -80,6 +80,8 @@ interface AudioDeckPlayerProps {
   onSelectMode: (nextMode: AudioPlayMode) => void;
   onTrackEnded: () => void;
   onSyncExternalPlaybackState: (nextStatus: AudioPlaybackStatus) => void;
+  tracks: Track[];
+  onSelectTrack: (track: Track) => void;
   translateTerm: (term: string) => string;
 }
 
@@ -96,6 +98,8 @@ export function AudioDeckPlayer({
   onSelectMode,
   onTrackEnded,
   onSyncExternalPlaybackState,
+  tracks,
+  onSelectTrack,
   translateTerm,
 }: AudioDeckPlayerProps) {
   const playerHostRef = useRef<HTMLDivElement | null>(null);
@@ -504,11 +508,37 @@ export function AudioDeckPlayer({
             </div>
           </div>
 
+          {/* Track Selector Dropdown (Title + Artist) */}
+          <div className="flex flex-col gap-1.5 border-t border-zinc-200/80 pt-4 sm:flex-row sm:items-center sm:gap-3 dark:border-zinc-800">
+            <label
+              htmlFor="audio-track-select"
+              className="text-xs font-medium text-zinc-600 whitespace-nowrap shrink-0 dark:text-zinc-400"
+            >
+              {t('audioSelectTrackLabel')}
+            </label>
+            <select
+              id="audio-track-select"
+              data-testid="audio-track-select"
+              value={activeTrack.id}
+              onChange={(e) => {
+                const chosen = tracks.find((tr) => tr.id === e.target.value);
+                if (chosen) onSelectTrack(chosen);
+              }}
+              className="w-full min-w-0 max-w-full flex-1 truncate rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-900 focus:border-blue-600 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
+            >
+              {tracks.map((tr) => (
+                <option key={tr.id} value={tr.id}>
+                  {tr.title} — {tr.artist}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Auto-Queue Mode Selector Strip */}
           <div
             role="radiogroup"
             aria-label="Modo de reproducción automática"
-            className="flex flex-wrap items-center gap-2 border-t border-zinc-200/80 pt-4 dark:border-zinc-800"
+            className="flex flex-wrap items-center gap-2 pt-3.5"
           >
             {modeOptions.map((option) => {
               const Icon = option.icon;

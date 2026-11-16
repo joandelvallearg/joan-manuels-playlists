@@ -19,6 +19,7 @@ import {
   resolveInitialTheme,
   resolveLanguageCode,
   resolvePublicShareUrl,
+  shouldShowVideoGallery,
   toggleThemeMode,
   translateCountryByCode,
   translateLanguageByCode,
@@ -420,4 +421,32 @@ test('buildAudioQueue builds ordered, radio, similar-genre, same-language, and s
   assert.equal(formatAudioTime(-5), '0:00');
   assert.equal(formatAudioTime(125.9), '2:05');
 });
+
+test('shouldShowVideoGallery hides full catalog until country, language, filter, search, or all mode is chosen', () => {
+  assert.equal(
+    shouldShowVideoGallery({ mode: 'country', selectedKey: null, genre: null, query: '' }),
+    false
+  );
+  assert.equal(
+    shouldShowVideoGallery({ mode: 'language', selectedKey: null, genre: null, query: '' }),
+    false
+  );
+  assert.equal(
+    shouldShowVideoGallery({ mode: 'country', selectedKey: 'FR', genre: null, query: '' }),
+    true
+  );
+  assert.equal(
+    shouldShowVideoGallery({ mode: 'country', selectedKey: null, genre: 'Pop', query: '' }),
+    true
+  );
+  assert.equal(
+    shouldShowVideoGallery({ mode: 'country', selectedKey: null, genre: null, query: 'Indila' }),
+    true
+  );
+  assert.equal(
+    shouldShowVideoGallery({ mode: 'all', selectedKey: null, genre: null, query: '' }),
+    true
+  );
+});
+
 

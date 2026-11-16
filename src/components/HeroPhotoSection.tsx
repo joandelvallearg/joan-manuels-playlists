@@ -8,6 +8,7 @@ interface HeroPhotoSectionProps {
   onChangeLang: (langCode: string) => void;
   isTranslating: boolean;
   transliteration: TransliterationInfo;
+  totalTracks: number;
   isOwner: boolean;
   onOpenOwnerStudio: (initialTab?: 'video' | 'photo') => void;
 }
@@ -18,6 +19,7 @@ export function HeroPhotoSection({
   onChangeLang,
   isTranslating,
   transliteration,
+  totalTracks,
   isOwner,
   onOpenOwnerStudio,
 }: HeroPhotoSectionProps) {
@@ -26,7 +28,16 @@ export function HeroPhotoSection({
       <div className="mx-auto max-w-6xl px-6 py-10 lg:py-14">
         <div className="flex flex-col gap-6 max-w-3xl">
           <div className="space-y-3">
-            <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">{t('greetingPrefix')}</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">{t('greetingPrefix')}</p>
+              <p
+                data-testid="hero-total-tracks"
+                className="font-mono text-xs sm:text-sm font-semibold text-zinc-700 tabular-nums dark:text-zinc-300"
+              >
+                {t('totalLabel')}: {totalTracks}{' '}
+                {totalTracks === 1 ? t('songsCountSingle') : t('songsCountPlural')}
+              </p>
+            </div>
 
             <div className="space-y-2">
               <h1

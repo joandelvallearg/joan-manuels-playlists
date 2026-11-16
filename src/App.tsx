@@ -649,6 +649,13 @@ export default function App() {
     [currentAudioTrack]
   );
 
+  const handleAudioSelectTrack = useCallback((track: Track) => {
+    setActiveTrackId(null);
+    setAudioTrackId(track.id);
+    setAudioAnchorTrackId(track.id);
+    setAudioPlaybackStatus('playing');
+  }, []);
+
   const handleAudioTrackEnded = useCallback(() => {
     const currentIdx = currentAudioTrack
       ? audioQueue.findIndex((tr) => tr.id === currentAudioTrack.id)
@@ -973,6 +980,7 @@ export default function App() {
           onChangeLang={handleChangeLang}
           isTranslating={isTranslating}
           transliteration={transliteration}
+          totalTracks={allTracks.length}
           isOwner={isOwner}
           onOpenOwnerStudio={(tab = 'video') => {
             setOwnerModalTab(tab);
@@ -1006,6 +1014,8 @@ export default function App() {
           onSelectMode={handleAudioSelectMode}
           onTrackEnded={handleAudioTrackEnded}
           onSyncExternalPlaybackState={setAudioPlaybackStatus}
+          tracks={allTracks}
+          onSelectTrack={handleAudioSelectTrack}
           translateTerm={translateTerm}
         />
 

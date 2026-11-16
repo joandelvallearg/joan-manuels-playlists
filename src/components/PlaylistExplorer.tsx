@@ -1,7 +1,7 @@
 import { Globe2, Languages, ListMusic, Play, Plus, Search, Trash2, Volume2 } from 'lucide-react';
 import type { UiStringKey } from '../data/translations';
 import type { PlaylistGroup, PlaylistMode, Track } from '../types';
-import { formatCodesDisplay, getCountryFlagEmoji } from '../utils/musicLogic';
+import { formatCodesDisplay, getCountryFlagEmoji, shouldShowVideoGallery } from '../utils/musicLogic';
 
 interface PlaylistExplorerProps {
   t: (key: UiStringKey) => string;
@@ -51,6 +51,13 @@ export function PlaylistExplorer({
   translateTerm,
 }: PlaylistExplorerProps) {
   const activeGroups = mode === 'country' ? countryGroups : mode === 'language' ? languageGroups : [];
+  const showGallery = shouldShowVideoGallery({
+    mode,
+    selectedKey,
+    genre: selectedGenre,
+    query: searchQuery,
+  });
+  const selectedGroup = selectedKey ? activeGroups.find((g) => g.key === selectedKey) ?? null : null;
 
   const formatSongCount = (count: number) =>
     `${count} ${count === 1 ? t('songsCountSingle') : t('songsCountPlural')}`;
@@ -204,18 +211,42 @@ export function PlaylistExplorer({
           </div>
         )}
 
-        {/* Thumbnail Galleries Grid */}
+        {/* Thumbnail Galleries Grid (only shown when a country/filter/all view is selected) */}
         <div id="gallery" className="scroll-mt-20 space-y-4">
-          <div className="flex items-center justify-between border-b border-zinc-200 pb-3 dark:border-zinc-800">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 pb-3 dark:border-zinc-800">
             <h2 className="font-display text-xl font-bold tracking-tight text-zinc-950 dark:text-zinc-50">
               {t('galleryHeading')}
+              {selectedGroup ? ` · ${translateTerm(selectedGroup.label)}` : ''}
             </h2>
-            <span className="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
-              {formatSongCount(filteredTracks.length)}
-            </span>
+            <div className="flex items-center gap-3">
+              {showGallery && (
+                <span className="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                  {formatSongCount(filteredTracks.length)}
+                </span>
+              )}
+              {selectedKey && (
+                <button
+                  type="button"
+                  data-testid="gallery-clear-selection"
+                  onClick={() => onSelectGroup(null)}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                >
+                  {t('clearSelection')}
+                </button>
+              )}
+            </div>
           </div>
 
-          {filteredTracks.length === 0 ? (
+          {!showGallery ? (
+            <div
+              data-testid="gallery-prompt"
+              className="rounded-2xl border border-zinc-200 bg-zinc-50 px-6 py-8 text-center dark:border-zinc-800 dark:bg-zinc-900/60"
+            >
+              <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
+                {t('selectPlaylistForGallery')}
+              </p>
+            </div>
+          ) : filteredTracks.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 py-12 px-6 text-center dark:border-zinc-800 dark:bg-zinc-900/60">
               <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                 {hasAnyTracks ? t('noTracksMatch') : t('emptyTracksText')}
