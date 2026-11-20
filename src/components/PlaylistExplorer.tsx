@@ -25,6 +25,7 @@ interface PlaylistExplorerProps {
   onOpenAddVideo: () => void;
   hasAnyTracks: boolean;
   translateTerm: (term: string) => string;
+  getTitleGloss: (track: Track) => string | null;
 }
 
 export function PlaylistExplorer({
@@ -49,6 +50,7 @@ export function PlaylistExplorer({
   onOpenAddVideo,
   hasAnyTracks,
   translateTerm,
+  getTitleGloss,
 }: PlaylistExplorerProps) {
   const activeGroups = mode === 'country' ? countryGroups : mode === 'language' ? languageGroups : [];
   const showGallery = shouldShowVideoGallery({
@@ -334,9 +336,26 @@ export function PlaylistExplorer({
 
                     <div className="flex flex-1 flex-col justify-between gap-3 p-4">
                       <div className="space-y-1">
-                        <h3 className="font-display text-lg font-bold text-zinc-950 leading-snug line-clamp-1 dark:text-zinc-50">
-                          {track.title}
-                        </h3>
+                        {(() => {
+                          const titleGloss = getTitleGloss(track);
+                          return (
+                            <h3
+                              data-testid="track-card-title"
+                              className="font-display text-lg font-bold text-zinc-950 leading-snug line-clamp-2 dark:text-zinc-50"
+                            >
+                              {track.title.trim()}
+                              {titleGloss && (
+                                <span
+                                  data-testid="track-card-title-gloss"
+                                  className="font-normal text-zinc-500 dark:text-zinc-400"
+                                >
+                                  {' '}
+                                  ({titleGloss})
+                                </span>
+                              )}
+                            </h3>
+                          );
+                        })()}
                         <p className="text-sm font-medium text-zinc-600 line-clamp-1 dark:text-zinc-400">
                           {track.artist}
                         </p>

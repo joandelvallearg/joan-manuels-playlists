@@ -165,6 +165,7 @@ export function filterTracks(
     selectedKey: string | null;
     genre: string | null;
     query: string;
+    titleGlosses?: Record<string, string>;
   }
 ): Track[] {
   const q = opts.query.trim().toLowerCase();
@@ -188,7 +189,8 @@ export function filterTracks(
 
     if (q) {
       const remixToken = track.isRemix ? 'remix' : '';
-      const haystack = `${track.title} ${track.artist} ${track.country} ${track.language} ${track.genre} ${remixToken}`.toLowerCase();
+      const glossToken = opts.titleGlosses?.[track.id] ?? '';
+      const haystack = `${track.title} ${glossToken} ${track.artist} ${track.country} ${track.language} ${track.genre} ${remixToken}`.toLowerCase();
       if (!haystack.includes(q)) return false;
     }
 

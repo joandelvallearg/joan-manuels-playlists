@@ -14,6 +14,7 @@ interface StagePlayerProps {
   onNext: () => void;
   onClosePlayer: () => void;
   translateTerm: (term: string) => string;
+  getTitleGloss: (track: Track) => string | null;
 }
 
 export function StagePlayer({
@@ -27,6 +28,7 @@ export function StagePlayer({
   onNext,
   onClosePlayer,
   translateTerm,
+  getTitleGloss,
 }: StagePlayerProps) {
   if (!activeTrack) {
     return null;
@@ -75,12 +77,26 @@ export function StagePlayer({
               </div>
 
               <div className="space-y-1.5">
-                <h2
-                  data-testid="stage-track-title"
-                  className="font-display text-2xl font-bold tracking-tight text-white sm:text-3xl leading-tight"
-                >
-                  {activeTrack.title}
-                </h2>
+                {(() => {
+                  const stageGloss = getTitleGloss(activeTrack);
+                  return (
+                    <h2
+                      data-testid="stage-track-title"
+                      className="font-display text-2xl font-bold tracking-tight text-white sm:text-3xl leading-tight"
+                    >
+                      {activeTrack.title.trim()}
+                      {stageGloss && (
+                        <span
+                          data-testid="stage-track-title-gloss"
+                          className="font-normal text-zinc-400"
+                        >
+                          {' '}
+                          ({stageGloss})
+                        </span>
+                      )}
+                    </h2>
+                  );
+                })()}
                 <p className="text-base font-medium text-zinc-300">{activeTrack.artist}</p>
               </div>
 

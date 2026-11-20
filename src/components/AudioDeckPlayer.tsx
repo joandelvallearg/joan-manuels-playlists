@@ -15,6 +15,7 @@ import {
 import type { UiStringKey } from '../data/translations';
 import type { AudioPlayMode, Track } from '../types';
 import { formatAudioTime, getCountryFlagEmoji } from '../utils/musicLogic';
+import { formatTrackTitlePlain } from '../utils/titleLocalization';
 
 interface YtPlayerInstance {
   playVideo: () => void;
@@ -83,6 +84,7 @@ interface AudioDeckPlayerProps {
   tracks: Track[];
   onSelectTrack: (track: Track) => void;
   translateTerm: (term: string) => string;
+  getTitleGloss: (track: Track) => string | null;
 }
 
 export function AudioDeckPlayer({
@@ -101,6 +103,7 @@ export function AudioDeckPlayer({
   tracks,
   onSelectTrack,
   translateTerm,
+  getTitleGloss,
 }: AudioDeckPlayerProps) {
   const playerHostRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YtPlayerInstance | null>(null);
@@ -387,7 +390,7 @@ export function AudioDeckPlayer({
               <p className="text-xs text-zinc-500 truncate max-w-full sm:max-w-md dark:text-zinc-400">
                 <span className="font-medium text-zinc-700 dark:text-zinc-300">{t('audioUpNext')}</span>{' '}
                 <span>
-                  {nextTrack.title} — {nextTrack.artist}
+                  {formatTrackTitlePlain(nextTrack.title, getTitleGloss(nextTrack))} — {nextTrack.artist}
                 </span>
               </p>
             )}
@@ -397,12 +400,26 @@ export function AudioDeckPlayer({
           <div className="flex flex-col gap-6 py-5 lg:flex-row lg:items-center lg:justify-between">
             {/* Minimalist Track Info: ONLY title, artist(s), country/countries, and genre */}
             <div className="min-w-0 flex-1 space-y-1.5">
-              <h2
-                data-testid="audio-deck-title"
-                className="font-display text-xl sm:text-2xl font-bold tracking-tight text-zinc-950 truncate dark:text-zinc-50"
-              >
-                {activeTrack.title}
-              </h2>
+              {(() => {
+                const activeGloss = getTitleGloss(activeTrack);
+                return (
+                  <h2
+                    data-testid="audio-deck-title"
+                    className="font-display text-xl sm:text-2xl font-bold tracking-tight text-zinc-950 leading-snug line-clamp-2 dark:text-zinc-50"
+                  >
+                    {activeTrack.title.trim()}
+                    {activeGloss && (
+                      <span
+                        data-testid="audio-deck-title-gloss"
+                        className="font-normal text-zinc-500 dark:text-zinc-400"
+                      >
+                        {' '}
+                        ({activeGloss})
+                      </span>
+                    )}
+                  </h2>
+                );
+              })()}
               <p
                 data-testid="audio-deck-artist"
                 className="text-sm sm:text-base font-medium text-zinc-700 truncate dark:text-zinc-300"
@@ -528,7 +545,7 @@ export function AudioDeckPlayer({
             >
               {tracks.map((tr) => (
                 <option key={tr.id} value={tr.id}>
-                  {tr.title} — {tr.artist}
+                  {formatTrackTitlePlain(tr.title, getTitleGloss(tr))} — {tr.artist}
                 </option>
               ))}
             </select>

@@ -27,7 +27,13 @@ interface TranslationResponsePayload {
   quotaFallback?: boolean;
 }
 
+interface ServerTitleAnnotation {
+  kind: 'translation' | 'transliteration' | 'none';
+  text: string;
+}
+
 const serverTranslationCache = new Map<string, TranslationResponsePayload>();
+const serverTitleCache = new Map<string, ServerTitleAnnotation>();
 
 function isQuotaError(err: unknown): boolean {
   const text = err instanceof Error ? err.message : String(err);
@@ -502,6 +508,163 @@ async function createApp() {
         translatedTerms: {},
         quotaFallback: true,
       });
+    }
+  });
+
+  app.post('/api/translate-titles', async (req, res) => {
+    try {
+      const targetLanguage =
+        typeof req.body?.targetLanguage === 'string' ? req.body.targetLanguage.trim() : '';
+      const targetLangCode =
+        typeof req.body?.targetLangCode === 'string'
+          ? req.body.targetLangCode.trim().toLowerCase()
+          : '';
+      const rawItems: unknown[] = Array.isArray(req.body?.items) ? req.body.items : [];
+
+      if (!targetLanguage || !targetLangCode) {
+        res.status(400).json({ error: 'targetLanguage and targetLangCode are required.' });
+        return;
+      }
+
+      const deduped = new Map<
+        string,
+        { title: string; artist: string; language: string; languageCode: string }
+      >();
+      for (const raw of rawItems) {
+        if (!raw || typeof raw !== 'object') continue;
+        const entry = raw as Record<string, unknown>;
+        const title = typeof entry.title === 'string' ? entry.title.trim().slice(0, 180) : '';
+        if (!title || deduped.has(title)) continue;
+        deduped.set(title, {
+          title,
+          artist: typeof entry.artist === 'string' ? entry.artist.trim().slice(0, 120) : '',
+          language: typeof entry.language === 'string' ? entry.language.trim().slice(0, 60) : '',
+          languageCode:
+            typeof entry.languageCode === 'string' ? entry.languageCode.trim().slice(0, 20) : '',
+        });
+      }
+
+      const items = Array.from(deduped.values()).slice(0, 120);
+      const annotations: Record<string, ServerTitleAnnotation> = {};
+      const uncached: typeof items = [];
+
+      for (const item of items) {
+        const key = `${targetLangCode}::${item.title}`;
+        const hit = serverTitleCache.get(key);
+        if (hit) {
+          annotations[item.title] = hit;
+        } else {
+          uncached.push(item);
+        }
+      }
+
+      if (uncached.length === 0) {
+        res.json({ annotations });
+        return;
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        res.json({ annotations, quotaFallback: true });
+        return;
+      }
+
+      const batchSize = 35;
+      let hadQuotaFallback = false;
+      const batches: Array<typeof uncached> = [];
+      for (let offset = 0; offset < uncached.length; offset += batchSize) {
+        batches.push(uncached.slice(offset, offset + batchSize));
+      }
+
+      await Promise.all(
+        batches.map(async (batch) => {
+          const indexed = batch.map((item, idx) => ({
+            id: idx,
+            title: item.title,
+            artist: item.artist,
+            songLanguage: item.language || item.languageCode || 'auto',
+          }));
+
+          const prompt = [
+            `Visitor target language: "${targetLanguage}" (code: "${targetLangCode}").`,
+            'For EACH indexed song title below, produce an exact parenthetical annotation according to these strict rules:',
+            '1. ALREADY IN TARGET LANGUAGE: If the song title is already written in the visitor\'s target language AND uses the same writing script, return kind = "none", text = "".',
+            '2. MEANINGFUL TRANSLATION EXISTS: If the song title is in another language and has a genuine, meaningful translation into the visitor\'s target language, return kind = "translation" and text = the natural, concise translation of the core title (omit redundant video tags like "Official Video", "Clip Officiel", "Remix", "Alt. Version", "LIVE @ ..." unless essential to meaning).',
+            '   - Examples (target Spanish): "Глубина" -> kind="translation", text="Profundidad"; "Bohemian Rhapsody" -> kind="translation", text="Rapsodia bohemia"; "Alors on danse" -> kind="translation", text="Entonces bailamos"; "Life" -> kind="translation", text="Vida"; "Падает Звезда" -> kind="translation", text="Cae una estrella"; "Dernière Danse (Clip Officiel)" -> kind="translation", text="Último baile"; "Inta Eyh (Remix)" -> kind="translation", text="¿Qué eres tú?".',
+            '   - Examples (target English): "Crimen" -> kind="translation", text="Crime"; "Senderito de amor" -> kind="translation", text="Little Path of Love"; "Пластинки" -> kind="translation", text="Vinyl Records".',
+            '3. NO TRANSLATION EXISTS (proper names, untranslatable place names, codes, or invented words like "Лали", "PROVENZA", "Cairo", "S91", "Waka Waka"):',
+            '   - IF the title\'s writing characters/script DIFFER from the visitor\'s target language script (e.g., Cyrillic vs Latin, Latin vs Japanese/Korean/Russian/Arabic/Chinese/Devanagari), return kind = "transliteration" and text = the most accurate phonetic transliteration into the visitor\'s native writing script.',
+            '     * Examples: "Лали" -> Spanish/English: kind="transliteration", text="Lali"; "PROVENZA" -> Japanese: kind="transliteration", text="プロベンサ"; "PROVENZA" -> Russian: kind="transliteration", text="Провенса"; "Cairo" -> Japanese: kind="transliteration", text="カイロ".',
+            '   - IF the title uses the SAME writing script as the visitor\'s language (e.g., "PROVENZA", "Cairo", "S91" for Spanish/English/French/Portuguese), return kind = "none", text = "".',
+            '4. NEVER repeat the exact original title. If a bilingual title already contains the target-language translation (e.g., "Boa Sorte / Good Luck" when target is English), return kind = "none", text = "".',
+            '5. Do NOT wrap text in parentheses.',
+            '',
+            'SONGS:',
+            JSON.stringify(indexed),
+          ].join('\n');
+
+          try {
+            const rawJson = await callGeminiWithFallback({
+              models: [
+                { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL },
+                { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW },
+              ],
+              contents: prompt,
+              systemInstruction:
+                'You are a precision music translator and phonetic transliteration linguist. Strictly distinguish genuine semantic translations from cross-script phonetic transliterations. Return valid JSON only.',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  annotations: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        id: { type: Type.INTEGER },
+                        kind: {
+                          type: Type.STRING,
+                          enum: ['translation', 'transliteration', 'none'],
+                        },
+                        text: { type: Type.STRING },
+                      },
+                      required: ['id', 'kind', 'text'],
+                    },
+                  },
+                },
+                required: ['annotations'],
+              },
+            });
+
+            const parsed = JSON.parse(rawJson) as {
+              annotations?: Array<{ id?: number; kind?: string; text?: string }>;
+            };
+
+            for (const entry of parsed.annotations ?? []) {
+              if (typeof entry.id !== 'number' || entry.id < 0 || entry.id >= batch.length) continue;
+              const item = batch[entry.id];
+              const kind: ServerTitleAnnotation['kind'] =
+                entry.kind === 'translation' || entry.kind === 'transliteration'
+                  ? entry.kind
+                  : 'none';
+              const text = typeof entry.text === 'string' ? entry.text.trim().slice(0, 180) : '';
+              const normalized: ServerTitleAnnotation =
+                kind !== 'none' && text ? { kind, text } : { kind: 'none', text: '' };
+              annotations[item.title] = normalized;
+              serverTitleCache.set(`${targetLangCode}::${item.title}`, normalized);
+            }
+          } catch (err) {
+            console.warn(
+              '[Translate titles fallback]',
+              err instanceof Error ? err.message : String(err)
+            );
+            hadQuotaFallback = true;
+          }
+        })
+      );
+
+      res.json({ annotations, ...(hadQuotaFallback ? { quotaFallback: true } : {}) });
+    } catch (err) {
+      console.warn('[Translate titles route error]', err instanceof Error ? err.message : String(err));
+      res.json({ annotations: {}, quotaFallback: true });
     }
   });
 

@@ -75,6 +75,12 @@ import {
   type ThemeMode,
 } from './utils/musicLogic';
 import { translateTermsPublicFallback } from './utils/profileTranslation';
+import {
+  isTrackAlreadyInTargetLanguage,
+  localizeSongTitlesPublicFallback,
+  resolveTitleGloss,
+  type TitleAnnotation,
+} from './utils/titleLocalization';
 
 interface CachedTranslationPayload {
   transliteratedName: string;
@@ -99,6 +105,9 @@ export default function App() {
   });
 
   const [aiCache, setAiCache] = useState<Record<string, CachedTranslationPayload>>({});
+  const [titleAnnotationsCache, setTitleAnnotationsCache] = useState<
+    Record<string, Record<string, TitleAnnotation>>
+  >({});
   const [isTranslating, setIsTranslating] = useState(false);
 
   const [mode, setMode] = useState<PlaylistMode>('country');
@@ -497,6 +506,125 @@ export default function App() {
     };
   }, [currentLang, dynamicTerms]);
 
+  // Automatic song title translation & cross-script transliteration for ALL languages (including 'es')
+  useEffect(() => {
+    if (allTracks.length === 0) return;
+
+    const langMeta = LANGUAGE_OPTIONS.find((l) => l.code === currentLang);
+    const storageKey = `jm_title_i18n_v1_${currentLang}`;
+
+    let storedMap: Record<string, TitleAnnotation> = {};
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, TitleAnnotation>;
+        if (parsed && typeof parsed === 'object') storedMap = parsed;
+      }
+    } catch {
+      // Ignore storage errors
+    }
+
+    const inMemory = titleAnnotationsCache[currentLang] ?? {};
+    if (Object.keys(storedMap).length > 0 && !titleAnnotationsCache[currentLang]) {
+      setTitleAnnotationsCache((prev) => ({
+        ...prev,
+        [currentLang]: { ...storedMap, ...(prev[currentLang] ?? {}) },
+      }));
+    }
+
+    const knownMap: Record<string, TitleAnnotation> = { ...storedMap, ...inMemory };
+
+    const missingItems = Array.from(
+      new Map(
+        allTracks
+          .filter((tr) => {
+            const cleanTitle = tr.title.trim();
+            if (!cleanTitle) return false;
+            if (isTrackAlreadyInTargetLanguage(tr, currentLang)) return false;
+            return !knownMap[cleanTitle];
+          })
+          .map((tr) => [
+            tr.title.trim(),
+            {
+              title: tr.title.trim(),
+              artist: tr.artist,
+              language: tr.language,
+              languageCode: tr.languageCode,
+            },
+          ])
+      ).values()
+    );
+
+    if (missingItems.length === 0) return;
+
+    let cancelled = false;
+    const abortController = new AbortController();
+
+    const runTitleLocalization = async () => {
+      const nextMap: Record<string, TitleAnnotation> = {};
+
+      try {
+        const res = await fetch('/api/translate-titles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: abortController.signal,
+          body: JSON.stringify({
+            targetLanguage: langMeta ? `${langMeta.englishName} (${currentLang})` : currentLang,
+            targetLangCode: currentLang,
+            items: missingItems,
+          }),
+        });
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = (await res.json()) as {
+            annotations?: Record<string, TitleAnnotation>;
+          };
+          if (data.annotations && typeof data.annotations === 'object') {
+            Object.assign(nextMap, data.annotations);
+          }
+        }
+      } catch {
+        // Static deployment or offline /api/translate-titles -> handled by fallback below
+      }
+
+      if (cancelled) return;
+
+      const stillMissing = missingItems.filter((item) => !nextMap[item.title]);
+      if (stillMissing.length > 0) {
+        const fallbackMap = await localizeSongTitlesPublicFallback(stillMissing, currentLang);
+        Object.assign(nextMap, fallbackMap);
+      }
+
+      if (cancelled || Object.keys(nextMap).length === 0) return;
+
+      setTitleAnnotationsCache((prev) => {
+        const merged = {
+          ...storedMap,
+          ...(prev[currentLang] ?? {}),
+          ...nextMap,
+        };
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(merged));
+        } catch {
+          // Ignore storage quota errors
+        }
+        return { ...prev, [currentLang]: merged };
+      });
+    };
+
+    const timerId = window.setTimeout(() => {
+      if (!cancelled) {
+        runTitleLocalization();
+      }
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+      abortController.abort();
+    };
+  }, [currentLang, allTracks]);
+
   const handleChangeLang = useCallback((langCode: string) => {
     setCurrentLang(langCode);
     try {
@@ -558,6 +686,24 @@ export default function App() {
     [allTracks]
   );
 
+  const getTitleGloss = useCallback(
+    (track: Track): string | null => {
+      const cleanTitle = track.title.trim();
+      const annotation = titleAnnotationsCache[currentLang]?.[cleanTitle];
+      return resolveTitleGloss(cleanTitle, currentLang, annotation, track.languageCode);
+    },
+    [titleAnnotationsCache, currentLang]
+  );
+
+  const titleGlossByTrackId = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const tr of allTracks) {
+      const gloss = getTitleGloss(tr);
+      if (gloss) map[tr.id] = gloss;
+    }
+    return map;
+  }, [allTracks, getTitleGloss]);
+
   const filteredTracks = useMemo(
     () =>
       filterTracks(allTracks, {
@@ -565,8 +711,9 @@ export default function App() {
         selectedKey,
         genre: selectedGenre,
         query: searchQuery,
+        titleGlosses: titleGlossByTrackId,
       }),
-    [allTracks, mode, selectedKey, selectedGenre, searchQuery]
+    [allTracks, mode, selectedKey, selectedGenre, searchQuery, titleGlossByTrackId]
   );
 
   const activeTrack = useMemo(
@@ -999,6 +1146,7 @@ export default function App() {
           onNext={handleNext}
           onClosePlayer={() => setActiveTrackId(null)}
           translateTerm={translateTerm}
+          getTitleGloss={getTitleGloss}
         />
 
         <AudioDeckPlayer
@@ -1017,6 +1165,7 @@ export default function App() {
           tracks={allTracks}
           onSelectTrack={handleAudioSelectTrack}
           translateTerm={translateTerm}
+          getTitleGloss={getTitleGloss}
         />
 
         <PlaylistExplorer
@@ -1044,6 +1193,7 @@ export default function App() {
           }}
           hasAnyTracks={allTracks.length > 0}
           translateTerm={translateTerm}
+          getTitleGloss={getTitleGloss}
         />
 
         <PhotoGallerySection
