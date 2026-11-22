@@ -166,9 +166,14 @@ export function filterTracks(
     genre: string | null;
     query: string;
     titleGlosses?: Record<string, string>;
+    visitorSelectedTrackIds?: string[];
   }
 ): Track[] {
   const q = opts.query.trim().toLowerCase();
+  const visitorSet =
+    opts.mode === 'my-playlists' && opts.selectedKey
+      ? new Set(opts.visitorSelectedTrackIds ?? [])
+      : null;
 
   return tracks.filter((track) => {
     if (opts.mode === 'country' && opts.selectedKey) {
@@ -181,6 +186,10 @@ export function filterTracks(
       const code = (track.languageCode || 'und').toLowerCase();
       const key = code !== 'und' ? code : track.language.toLowerCase();
       if (key !== opts.selectedKey) return false;
+    }
+
+    if (visitorSet && !visitorSet.has(track.id)) {
+      return false;
     }
 
     if (opts.genre && track.genre.toLowerCase() !== opts.genre.toLowerCase()) {
@@ -840,6 +849,240 @@ export function shouldShowVideoGallery(opts: {
       opts.query.trim()
   );
 }
+
+export type DuplicateMatchType =
+  | 'exact-video'
+  | 'same-song-artist'
+  | 'same-song-interpretation';
+
+export interface DuplicateCandidateInput {
+  id?: string;
+  youtubeId?: string | null;
+  title?: string;
+  artist?: string;
+}
+
+export interface DuplicateTrackMatch {
+  track: Track;
+  matchType: DuplicateMatchType;
+}
+
+export interface CatalogDuplicateGroup {
+  key: string;
+  label: string;
+  matchType: DuplicateMatchType;
+  tracks: Track[];
+}
+
+const TITLE_QUALIFIER_KEYWORD_REGEX =
+  /\b(official|oficial|video|music video|videoclip|clip officiel|clip|audio|lyric|lyrics|letra|hd|4k|uhd|hq|mv|pv|live|en vivo|ao vivo|directo|concert|concierto|session|sesion|unplugged|acoustic|acustico|acustica|remix|rmx|mix|original mix|radio edit|edit|version|alt|remaster|remastered|cover|karaoke|instrumental|tribute|feat|ft|featuring|en espanol|sub|traducida|spanish version|english version|sped up|slowed|reverb|autoradio|explicit|clean)\b/i;
+
+function normalizeTitleFragment(raw: string): string {
+  return stripDiacritics(raw)
+    .replace(/\b(feat|ft|featuring)\b\.?\s+.*$/i, '')
+    .replace(/&/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function normalizeSongTitleForComparison(rawTitle: string): string {
+  if (!rawTitle || !rawTitle.trim()) return '';
+  let cleaned = stripDiacritics(rawTitle);
+
+  // Strip parenthetical and bracketed sections
+  cleaned = cleaned.replace(/\([^)]*\)/g, ' ').replace(/\[[^\]]*\]/g, ' ');
+
+  // Strip trailing "- Official Video", "- Remix", "- Live", etc.
+  cleaned = cleaned.replace(
+    /\s*[-–—|]\s*(official|oficial|video|audio|lyric|lyrics|live|en vivo|ao vivo|remix|rmx|mix|edit|version|acustico|acoustic|instrumental|remaster(?:ed)?|clip(?:\s+officiel)?)\b.*$/i,
+    ''
+  );
+
+  // Strip featuring clauses in title
+  cleaned = cleaned.replace(/\s+\b(feat|ft|featuring)\b\.?\s+.*$/i, '');
+
+  return normalizeTitleFragment(cleaned);
+}
+
+export function extractComparableTitleKeys(rawTitle: string): string[] {
+  const keys = new Set<string>();
+  const primary = normalizeSongTitleForComparison(rawTitle);
+  if (primary.length >= 2) {
+    keys.add(primary);
+  }
+
+  // Also index meaningful parenthetical subtitles (e.g., "Louca Por Ti (Dust In The Wind)")
+  const parenMatches = rawTitle.matchAll(/\(([^)]+)\)|\[([^\]]+)\]/g);
+  for (const match of parenMatches) {
+    const inner = (match[1] ?? match[2] ?? '').trim();
+    if (!inner) continue;
+    const normalizedInner = normalizeTitleFragment(inner);
+    if (normalizedInner.length < 2) continue;
+    if (TITLE_QUALIFIER_KEYWORD_REGEX.test(normalizedInner)) continue;
+    const words = normalizedInner.split(' ').filter(Boolean);
+    if (words.length >= 2 || normalizedInner.length >= 4) {
+      keys.add(normalizedInner);
+    }
+  }
+
+  return Array.from(keys);
+}
+
+export function normalizeArtistTokens(rawArtist: string): string[] {
+  if (!rawArtist || !rawArtist.trim()) return [];
+  const normalized = stripDiacritics(rawArtist)
+    .replace(/\b(feat|ft|featuring|with|con|and|vs)\b\.?/gi, '|')
+    .replace(/[&,/;|+]+/g, '|');
+
+  const tokens = normalized
+    .split('|')
+    .map((part) =>
+      part
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+    .filter((part) => part.length >= 2);
+
+  return Array.from(new Set(tokens));
+}
+
+function artistsOverlap(artistA: string, artistB: string): boolean {
+  const tokensA = normalizeArtistTokens(artistA);
+  const tokensB = normalizeArtistTokens(artistB);
+  if (tokensA.length === 0 || tokensB.length === 0) return false;
+
+  const setB = new Set(tokensB);
+  return tokensA.some((tok) => setB.has(tok));
+}
+
+const DUPLICATE_SEVERITY: Record<DuplicateMatchType, number> = {
+  'exact-video': 0,
+  'same-song-artist': 1,
+  'same-song-interpretation': 2,
+};
+
+export function findDuplicateTrackMatches(
+  candidate: DuplicateCandidateInput,
+  existingTracks: Track[]
+): DuplicateTrackMatch[] {
+  const candidateYoutubeId = (candidate.youtubeId ?? '').trim();
+  const candidateKeys = extractComparableTitleKeys(candidate.title ?? '');
+  const candidateArtist = candidate.artist ?? '';
+
+  if (!candidateYoutubeId && candidateKeys.length === 0) {
+    return [];
+  }
+
+  const matches: DuplicateTrackMatch[] = [];
+
+  for (const track of existingTracks) {
+    if (candidate.id && track.id === candidate.id) continue;
+
+    if (candidateYoutubeId && track.youtubeId === candidateYoutubeId) {
+      matches.push({ track, matchType: 'exact-video' });
+      continue;
+    }
+
+    if (candidateKeys.length === 0) continue;
+    const trackKeys = extractComparableTitleKeys(track.title);
+    const hasTitleMatch = candidateKeys.some((key) => trackKeys.includes(key));
+    if (!hasTitleMatch) continue;
+
+    const sameArtist = artistsOverlap(candidateArtist, track.artist);
+    matches.push({
+      track,
+      matchType: sameArtist ? 'same-song-artist' : 'same-song-interpretation',
+    });
+  }
+
+  return matches.sort(
+    (a, b) => DUPLICATE_SEVERITY[a.matchType] - DUPLICATE_SEVERITY[b.matchType]
+  );
+}
+
+export function findCatalogDuplicateGroups(tracks: Track[]): CatalogDuplicateGroup[] {
+  if (tracks.length < 2) return [];
+
+  const parent = tracks.map((_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  const titleKeysPerTrack = tracks.map((t) => extractComparableTitleKeys(t.title));
+
+  for (let i = 0; i < tracks.length; i++) {
+    for (let j = i + 1; j < tracks.length; j++) {
+      const sameYoutube =
+        Boolean(tracks[i].youtubeId) && tracks[i].youtubeId === tracks[j].youtubeId;
+      const sameSong =
+        !sameYoutube &&
+        titleKeysPerTrack[i].some((key) => titleKeysPerTrack[j].includes(key));
+
+      if (sameYoutube || sameSong) {
+        union(i, j);
+      }
+    }
+  }
+
+  const clusters = new Map<number, Track[]>();
+  for (let i = 0; i < tracks.length; i++) {
+    const root = find(i);
+    const list = clusters.get(root);
+    if (list) {
+      list.push(tracks[i]);
+    } else {
+      clusters.set(root, [tracks[i]]);
+    }
+  }
+
+  const groups: CatalogDuplicateGroup[] = [];
+  for (const [, groupTracks] of clusters) {
+    if (groupTracks.length < 2) continue;
+
+    let groupSeverity: DuplicateMatchType = 'same-song-interpretation';
+    outer: for (let i = 0; i < groupTracks.length; i++) {
+      for (let j = i + 1; j < groupTracks.length; j++) {
+        if (groupTracks[i].youtubeId && groupTracks[i].youtubeId === groupTracks[j].youtubeId) {
+          groupSeverity = 'exact-video';
+          break outer;
+        }
+        if (artistsOverlap(groupTracks[i].artist, groupTracks[j].artist)) {
+          groupSeverity = 'same-song-artist';
+        }
+      }
+    }
+
+    const primaryKey =
+      normalizeSongTitleForComparison(groupTracks[0].title) ||
+      groupTracks[0].youtubeId ||
+      groupTracks[0].id;
+
+    groups.push({
+      key: `${groupSeverity}:${primaryKey}:${groupTracks[0].id}`,
+      label: groupTracks[0].title,
+      matchType: groupSeverity,
+      tracks: groupTracks,
+    });
+  }
+
+  return groups.sort(
+    (a, b) =>
+      DUPLICATE_SEVERITY[a.matchType] - DUPLICATE_SEVERITY[b.matchType] ||
+      b.tracks.length - a.tracks.length
+  );
+}
+
 
 
 

@@ -1,24 +1,32 @@
-import { useState, type FormEvent } from 'react';
-import { LogIn, LogOut, Sparkles, Upload, Video, X } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { AlertTriangle, BarChart3, ChevronDown, ChevronUp, LogIn, LogOut, Sparkles, Upload, Video, X } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { UiStringKey } from '../data/translations';
-import { OWNER_EMAIL, type AnalyzedVideoResult } from '../types';
+import { OWNER_EMAIL, type AnalyzedVideoResult, type PageVisit, type Track } from '../types';
 import { compressImageToDataUrl } from '../utils/imageHelper';
 import {
   extractYouTubeId,
+  findCatalogDuplicateGroups,
+  findDuplicateTrackMatches,
   getCountryFlagEmoji,
   getYouTubeThumbnailUrl,
   resolveCountryCode,
   resolveLanguageCode,
+  type DuplicateMatchType,
 } from '../utils/musicLogic';
+import { OwnerStatsPanel } from './OwnerStatsPanel';
 
 interface OwnerStudioModalProps {
   open: boolean;
-  initialTab: 'video' | 'photo';
+  initialTab: 'video' | 'photo' | 'stats';
   onClose: () => void;
   t: (key: UiStringKey) => string;
+  currentLang?: string;
   user: User | null;
   isOwner: boolean;
+  existingTracks?: Track[];
+  initialYoutubeUrl?: string;
+  initialAnalyzed?: AnalyzedVideoResult | null;
   onSignIn: () => Promise<void>;
   onSignOut: () => Promise<void>;
   onPublishTrack: (video: AnalyzedVideoResult) => Promise<void>;
@@ -27,6 +35,26 @@ interface OwnerStudioModalProps {
   hasDefaultPhotos: boolean;
   onClearDefaultTracks: () => Promise<void>;
   onClearDefaultPhotos: () => Promise<void>;
+  visits?: PageVisit[];
+  totalVisitsCount?: number;
+  statsLoading?: boolean;
+  statsError?: string | null;
+  onRefreshStats?: () => void;
+}
+
+function getDuplicateMatchHeading(
+  matchType: DuplicateMatchType,
+  t: (key: UiStringKey) => string
+): string {
+  if (matchType === 'exact-video') return t('duplicateVideoAlertTitle');
+  if (matchType === 'same-song-artist') return t('duplicateSongArtistAlertTitle');
+  return t('duplicateInterpretationAlertTitle');
+}
+
+function getDuplicateMatchTag(matchType: DuplicateMatchType): string {
+  if (matchType === 'exact-video') return 'Mismo video';
+  if (matchType === 'same-song-artist') return 'Misma canción y artista';
+  return 'Otra interpretación';
 }
 
 export function OwnerStudioModal({
@@ -34,8 +62,12 @@ export function OwnerStudioModal({
   initialTab,
   onClose,
   t,
+  currentLang = 'es',
   user,
   isOwner,
+  existingTracks = [],
+  initialYoutubeUrl = '',
+  initialAnalyzed = null,
   onSignIn,
   onSignOut,
   onPublishTrack,
@@ -44,14 +76,21 @@ export function OwnerStudioModal({
   hasDefaultPhotos,
   onClearDefaultTracks,
   onClearDefaultPhotos,
+  visits = [],
+  totalVisitsCount = 0,
+  statsLoading = false,
+  statsError = null,
+  onRefreshStats,
 }: OwnerStudioModalProps) {
-  const [activeTab, setActiveTab] = useState<'video' | 'photo'>(initialTab);
-  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [activeTab, setActiveTab] = useState<'video' | 'photo' | 'stats'>(initialTab);
+  const [youtubeUrl, setYoutubeUrl] = useState(initialYoutubeUrl);
   const [analyzing, setAnalyzing] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [analyzed, setAnalyzed] = useState<AnalyzedVideoResult | null>(null);
+  const [analyzed, setAnalyzed] = useState<AnalyzedVideoResult | null>(initialAnalyzed);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [quotaNotice, setQuotaNotice] = useState(false);
+  const [confirmedDuplicateSignature, setConfirmedDuplicateSignature] = useState<string | null>(null);
+  const [showCatalogDuplicates, setShowCatalogDuplicates] = useState(false);
 
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoCaption, setPhotoCaption] = useState('');
@@ -59,7 +98,40 @@ export function OwnerStudioModal({
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
+
+  const parsedYoutubeId = extractYouTubeId(youtubeUrl);
+  const urlDuplicateMatches = parsedYoutubeId
+    ? findDuplicateTrackMatches({ youtubeId: parsedYoutubeId }, existingTracks)
+    : [];
+
+  const duplicateMatches = analyzed
+    ? findDuplicateTrackMatches(
+        {
+          youtubeId: analyzed.youtubeId,
+          title: analyzed.title,
+          artist: analyzed.artist,
+        },
+        existingTracks
+      )
+    : [];
+
+  const duplicateSignature = duplicateMatches
+    .map((match) => `${match.matchType}:${match.track.id}`)
+    .join('|');
+  const hasUnconfirmedDuplicate =
+    duplicateMatches.length > 0 && confirmedDuplicateSignature !== duplicateSignature;
+
+  const catalogDuplicateGroups = findCatalogDuplicateGroups(existingTracks);
 
   const fetchStaticYouTubeDraft = async (id: string): Promise<AnalyzedVideoResult> => {
     const canonicalUrl = `https://www.youtube.com/watch?v=${id}`;
@@ -106,6 +178,7 @@ export function OwnerStudioModal({
     e.preventDefault();
     setVideoError(null);
     setQuotaNotice(false);
+    setConfirmedDuplicateSignature(null);
     const id = extractYouTubeId(youtubeUrl);
     if (!id) {
       setVideoError('Ingresa un enlace válido de YouTube (watch, youtu.be o shorts).');
@@ -143,6 +216,7 @@ export function OwnerStudioModal({
   const handleManualDraft = () => {
     setVideoError(null);
     setQuotaNotice(false);
+    setConfirmedDuplicateSignature(null);
     const id = extractYouTubeId(youtubeUrl);
     if (!id) {
       setVideoError('Primero pega un enlace válido de YouTube para continuar.');
@@ -166,13 +240,14 @@ export function OwnerStudioModal({
 
   const handlePublish = async (e: FormEvent) => {
     e.preventDefault();
-    if (!analyzed) return;
+    if (!analyzed || hasUnconfirmedDuplicate) return;
     setVideoError(null);
     setPublishing(true);
     try {
       await onPublishTrack(analyzed);
       setYoutubeUrl('');
       setAnalyzed(null);
+      setConfirmedDuplicateSignature(null);
       onClose();
     } catch (err) {
       setVideoError(err instanceof Error ? err.message : 'Error al publicar canción.');
@@ -218,6 +293,10 @@ export function OwnerStudioModal({
     }
   };
 
+  const primaryDuplicateType = duplicateMatches[0]?.matchType;
+  const isSevereDuplicate =
+    primaryDuplicateType === 'exact-video' || primaryDuplicateType === 'same-song-artist';
+
   return (
     <div
       role="dialog"
@@ -225,7 +304,11 @@ export function OwnerStudioModal({
       aria-labelledby="owner-studio-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
     >
-      <div className="w-full max-w-xl rounded-2xl border border-zinc-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col dark:border-zinc-800 dark:bg-zinc-900">
+      <div
+        className={`w-full ${
+          activeTab === 'stats' && user && isOwner ? 'max-w-2xl' : 'max-w-xl'
+        } rounded-2xl border border-zinc-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col dark:border-zinc-800 dark:bg-zinc-900`}
+      >
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
           <h2 id="owner-studio-title" className="font-display text-lg font-bold text-zinc-950 dark:text-zinc-50">
             {t('ownerModalTitle')}
@@ -280,8 +363,8 @@ export function OwnerStudioModal({
 
           {user && isOwner && (
             <div className="space-y-5">
-              <div className="flex items-center justify-between gap-4 border-b border-zinc-200 pb-3 dark:border-zinc-800">
-                <div className="inline-flex items-center gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-950">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+                <div className="inline-flex flex-wrap items-center gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-950">
                   <button
                     type="button"
                     onClick={() => setActiveTab('video')}
@@ -302,6 +385,20 @@ export function OwnerStudioModal({
                     <Upload className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>{t('tabUploadPhoto')}</span>
                   </button>
+                  <button
+                    type="button"
+                    data-testid="owner-tab-stats"
+                    onClick={() => {
+                      setActiveTab('stats');
+                      onRefreshStats?.();
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
+                      activeTab === 'stats' ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-zinc-50' : 'text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-100'
+                    }`}
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{t('tabOwnerStats')}</span>
+                  </button>
                 </div>
 
                 <button
@@ -314,7 +411,17 @@ export function OwnerStudioModal({
                 </button>
               </div>
 
-              {activeTab === 'video' ? (
+              {activeTab === 'stats' ? (
+                <OwnerStatsPanel
+                  t={t}
+                  currentLang={currentLang}
+                  visits={visits}
+                  totalVisitsCount={totalVisitsCount}
+                  loading={statsLoading}
+                  error={statsError}
+                  onRefresh={() => onRefreshStats?.()}
+                />
+              ) : activeTab === 'video' ? (
                 <div className="space-y-5">
                   {hasDefaultTracks && (
                     <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950">
@@ -345,6 +452,27 @@ export function OwnerStudioModal({
                       placeholder={t('youtubeUrlPlaceholder')}
                       className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm text-zinc-950 focus:border-blue-600 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
                     />
+                    {urlDuplicateMatches.length > 0 && (
+                      <div
+                        data-testid="duplicate-url-alert"
+                        role="alert"
+                        className="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-xs text-red-900 dark:border-red-800/80 dark:bg-red-950/45 dark:text-red-200"
+                      >
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-red-600 dark:text-red-400" aria-hidden="true" />
+                          <div className="space-y-1">
+                            <p className="font-semibold">{t('duplicateUrlAlertText')}</p>
+                            <ul className="space-y-0.5 text-red-800 dark:text-red-300">
+                              {urlDuplicateMatches.slice(0, 3).map(({ track }) => (
+                                <li key={track.id}>
+                                  <span className="font-semibold">{track.title}</span> — {track.artist} ({track.country} · {track.genre})
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <button
                         type="submit"
@@ -505,14 +633,118 @@ export function OwnerStudioModal({
                         </div>
                       </div>
 
+                      {duplicateMatches.length > 0 && primaryDuplicateType && (
+                        <div
+                          data-testid="duplicate-track-alert"
+                          role="alert"
+                          className={`space-y-3 rounded-xl border p-3.5 text-xs ${
+                            isSevereDuplicate
+                              ? 'border-red-300 bg-red-50 text-red-950 dark:border-red-800/80 dark:bg-red-950/45 dark:text-red-100'
+                              : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800/80 dark:bg-amber-950/40 dark:text-amber-100'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <AlertTriangle
+                              className={`h-4 w-4 shrink-0 mt-0.5 ${
+                                isSevereDuplicate ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'
+                              }`}
+                              aria-hidden="true"
+                            />
+                            <div className="space-y-1.5">
+                              <p className="font-bold">
+                                {getDuplicateMatchHeading(primaryDuplicateType, t)}
+                              </p>
+                              <ul className="space-y-1">
+                                {duplicateMatches.slice(0, 4).map(({ track, matchType }) => (
+                                  <li key={track.id} className="leading-snug">
+                                    <span className="font-semibold">{track.title}</span> — {track.artist}{' '}
+                                    <span className="opacity-80">
+                                      ({track.country} · {track.genre} · {getDuplicateMatchTag(matchType)})
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+
+                          <label className="flex items-start gap-2.5 pt-2 border-t border-current/15 cursor-pointer select-none font-medium">
+                            <input
+                              data-testid="duplicate-confirm-checkbox"
+                              type="checkbox"
+                              checked={confirmedDuplicateSignature === duplicateSignature}
+                              onChange={(e) =>
+                                setConfirmedDuplicateSignature(e.target.checked ? duplicateSignature : null)
+                              }
+                              className="mt-0.5 h-4 w-4 rounded border-zinc-400 text-blue-600 focus:ring-blue-600 dark:border-zinc-600 dark:bg-zinc-900"
+                            />
+                            <span>{t('duplicateConfirmLabel')}</span>
+                          </label>
+                        </div>
+                      )}
+
                       <button
                         type="submit"
-                        disabled={publishing}
-                        className="w-full rounded-xl bg-zinc-950 px-4 py-2.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 cursor-pointer dark:bg-blue-600 dark:hover:bg-blue-500"
+                        disabled={publishing || hasUnconfirmedDuplicate}
+                        className="w-full rounded-xl bg-zinc-950 px-4 py-2.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer dark:bg-blue-600 dark:hover:bg-blue-500"
                       >
                         {publishing ? t('publishing') : t('publishTrack')}
                       </button>
                     </form>
+                  )}
+
+                  {catalogDuplicateGroups.length > 0 && (
+                    <div
+                      data-testid="catalog-duplicates-notice"
+                      className="rounded-xl border border-amber-200 bg-amber-50/75 px-4 py-3 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 font-medium">
+                          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                          <span>
+                            <strong className="font-mono tabular-nums">{catalogDuplicateGroups.length}</strong>{' '}
+                            {t('catalogDuplicatesSummary')}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowCatalogDuplicates((prev) => !prev)}
+                          className="inline-flex shrink-0 items-center gap-1 font-semibold text-amber-900 hover:underline cursor-pointer dark:text-amber-200"
+                        >
+                          <span>
+                            {showCatalogDuplicates
+                              ? t('catalogDuplicatesToggleHide')
+                              : t('catalogDuplicatesToggleShow')}
+                          </span>
+                          {showCatalogDuplicates ? (
+                            <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+                          ) : (
+                            <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                          )}
+                        </button>
+                      </div>
+
+                      {showCatalogDuplicates && (
+                        <ul className="mt-3 space-y-2 border-t border-amber-200/80 pt-3 dark:border-amber-900/60">
+                          {catalogDuplicateGroups.map((group) => (
+                            <li key={group.key} className="space-y-0.5">
+                              <p className="font-semibold">
+                                {group.label}{' '}
+                                <span className="font-normal opacity-80">
+                                  ({getDuplicateMatchTag(group.matchType)} · {group.tracks.length})
+                                </span>
+                              </p>
+                              <ul className="pl-3 space-y-0.5 text-[11px] opacity-90">
+                                {group.tracks.map((tr) => (
+                                  <li key={tr.id}>
+                                    • {tr.title} — {tr.artist} ({tr.country} · {tr.genre})
+                                  </li>
+                                ))}
+                              </ul>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   )}
                 </div>
               ) : (

@@ -2,9 +2,23 @@ export const OWNER_EMAIL = 'joandelvallearg@gmail.com';
 export const OWNER_SPANISH_NAME = 'Joan Manuel Sebastian Del Valle';
 export const PUBLIC_SHARE_URL = 'https://joan-manuels-playlists.vercel.app/';
 
-export type PlaylistMode = 'country' | 'language' | 'all';
+export type PlaylistMode = 'country' | 'language' | 'my-playlists' | 'all';
 
 export type AudioPlayMode = 'ordered' | 'radio' | 'similar-genre' | 'same-language' | 'same-genre';
+
+export interface VisitorPlaylist {
+  id: string;
+  name: string;
+  trackIds: string[];
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface VisitorLibraryState {
+  likedTrackIds: string[];
+  playlists: VisitorPlaylist[];
+  historyTrackIds: string[];
+}
 
 export interface Track {
   id: string;
@@ -95,4 +109,23 @@ export interface GeneratedProfileDraft {
   trackCount: number;
   translations?: Record<string, ProfileTranslation>;
   aiQuotaExceeded?: boolean;
+}
+
+export type VisitorDeviceType = 'mobile' | 'tablet' | 'desktop';
+export type VisitGeoSource = 'server-header' | 'ip-geo' | 'timezone';
+
+export interface PageVisit {
+  id: string;
+  countryCode: string;
+  countryName: string;
+  region: string;
+  city: string;
+  continent: string;
+  timezone: string;
+  visitorLang: string;
+  deviceType: VisitorDeviceType;
+  referrerHost: string;
+  geoSource: VisitGeoSource;
+  dayKey: string;
+  createdAtMs: number;
 }

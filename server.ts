@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'node:path';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
@@ -34,6 +35,67 @@ interface ServerTitleAnnotation {
 
 const serverTranslationCache = new Map<string, TranslationResponsePayload>();
 const serverTitleCache = new Map<string, ServerTitleAnnotation>();
+
+interface ServerGeoPayload {
+  countryCode?: string;
+  countryName?: string;
+  region?: string;
+  city?: string;
+  continent?: string;
+  geoSource: 'server-header' | 'ip-geo' | 'none';
+}
+
+const serverGeoCache = new Map<string, { expiresAt: number; payload: ServerGeoPayload }>();
+
+function normalizeCandidateIp(raw: string): string {
+  const trimmed = raw.trim().replace(/^::ffff:/i, '');
+  if (!trimmed) return '';
+  return net.isIP(trimmed) ? trimmed : '';
+}
+
+function isPublicRoutableIp(ip: string): boolean {
+  if (!ip || !net.isIP(ip)) return false;
+  const lower = ip.toLowerCase();
+  if (lower === '::1' || lower === '::') return false;
+  if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80:')) return false;
+
+  if (net.isIPv4(ip)) {
+    const octets = ip.split('.').map(Number);
+    if (octets.length !== 4 || octets.some((n) => Number.isNaN(n))) return false;
+    const [a, b] = octets;
+    if (a === 0 || a === 10 || a === 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false;
+    return true;
+  }
+
+  return true;
+}
+
+function extractClientPublicIp(req: express.Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  const candidates: string[] = [];
+  if (typeof forwarded === 'string') {
+    for (const part of forwarded.split(',')) {
+      const normalized = normalizeCandidateIp(part);
+      if (normalized) candidates.push(normalized);
+    }
+  } else if (Array.isArray(forwarded)) {
+    for (const entry of forwarded) {
+      for (const part of entry.split(',')) {
+        const normalized = normalizeCandidateIp(part);
+        if (normalized) candidates.push(normalized);
+      }
+    }
+  }
+  if (req.socket?.remoteAddress) {
+    const normalized = normalizeCandidateIp(req.socket.remoteAddress);
+    if (normalized) candidates.push(normalized);
+  }
+  return candidates.find((ip) => isPublicRoutableIp(ip)) ?? '';
+}
 
 function isQuotaError(err: unknown): boolean {
   const text = err instanceof Error ? err.message : String(err);
@@ -189,6 +251,103 @@ async function createApp() {
   app.get('/api/health', (_req, res) => {
     const publicUrl = (process.env.SHARED_APP_URL || 'https://joan-manuels-playlists.vercel.app/').trim();
     res.json({ ok: true, publicUrl });
+  });
+
+  app.get('/api/visitor-geo', async (req, res) => {
+    try {
+      const vercelCountry =
+        typeof req.headers['x-vercel-ip-country'] === 'string'
+          ? req.headers['x-vercel-ip-country'].trim().toUpperCase()
+          : '';
+      const cfCountry =
+        typeof req.headers['cf-ipcountry'] === 'string'
+          ? req.headers['cf-ipcountry'].trim().toUpperCase()
+          : '';
+      const headerCountry = /^[A-Z]{2}$/.test(vercelCountry)
+        ? vercelCountry
+        : /^[A-Z]{2}$/.test(cfCountry) && cfCountry !== 'XX' && cfCountry !== 'T1'
+          ? cfCountry
+          : '';
+
+      if (headerCountry) {
+        const rawCity =
+          typeof req.headers['x-vercel-ip-city'] === 'string'
+            ? req.headers['x-vercel-ip-city']
+            : '';
+        const rawRegion =
+          typeof req.headers['x-vercel-ip-country-region'] === 'string'
+            ? req.headers['x-vercel-ip-country-region']
+            : '';
+        let decodedCity = rawCity;
+        try {
+          decodedCity = rawCity ? decodeURIComponent(rawCity) : '';
+        } catch {
+          decodedCity = rawCity;
+        }
+        res.json({
+          countryCode: headerCountry,
+          region: rawRegion.slice(0, 80),
+          city: decodedCity.slice(0, 80),
+          geoSource: 'server-header',
+        } satisfies ServerGeoPayload);
+        return;
+      }
+
+      const publicIp = extractClientPublicIp(req);
+      if (!publicIp) {
+        res.json({ geoSource: 'none' } satisfies ServerGeoPayload);
+        return;
+      }
+
+      const now = Date.now();
+      const cached = serverGeoCache.get(publicIp);
+      if (cached && cached.expiresAt > now) {
+        res.json(cached.payload);
+        return;
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2500);
+      try {
+        const geoRes = await fetch(
+          `https://get.geojs.io/v1/ip/geo/${encodeURIComponent(publicIp)}.json`,
+          { signal: controller.signal }
+        );
+        if (!geoRes.ok) {
+          res.json({ geoSource: 'none' } satisfies ServerGeoPayload);
+          return;
+        }
+        const geoData = (await geoRes.json()) as {
+          country_code?: string;
+          country?: string;
+          region?: string;
+          city?: string;
+          continent_code?: string;
+        };
+        const code = (geoData.country_code || '').trim().toUpperCase();
+        if (!/^[A-Z]{2,3}$/.test(code)) {
+          res.json({ geoSource: 'none' } satisfies ServerGeoPayload);
+          return;
+        }
+        const payload: ServerGeoPayload = {
+          countryCode: code,
+          countryName: (geoData.country || '').trim().slice(0, 80),
+          region: (geoData.region || '').trim().slice(0, 80),
+          city: (geoData.city || '').trim().slice(0, 80),
+          continent: (geoData.continent_code || '').trim().slice(0, 40),
+          geoSource: 'ip-geo',
+        };
+        if (serverGeoCache.size > 500) {
+          serverGeoCache.clear();
+        }
+        serverGeoCache.set(publicIp, { expiresAt: now + 3600_000, payload });
+        res.json(payload);
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      res.json({ geoSource: 'none' } satisfies ServerGeoPayload);
+    }
   });
 
   app.post('/api/analyze-video', async (req, res) => {

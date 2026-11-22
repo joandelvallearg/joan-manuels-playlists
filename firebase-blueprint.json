@@ -239,6 +239,94 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "PageVisit": {
+      "title": "PageVisit",
+      "description": "Anonymous page visit event with coarse geographic metadata readable exclusively by Joan Manuel.",
+      "type": "object",
+      "properties": {
+        "countryCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 3,
+          "pattern": "^[A-Z]{2,3}$",
+          "description": "ISO 3166-1 alpha-2 country code (or ZZ when unspecified)."
+        },
+        "countryName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Country name in Spanish."
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "State, province, or region name if available."
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "City name if available."
+        },
+        "continent": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Continent or world region."
+        },
+        "timezone": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "IANA timezone reported by the visitor browser."
+        },
+        "visitorLang": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Visitor browser language code."
+        },
+        "deviceType": {
+          "type": "string",
+          "enum": ["mobile", "tablet", "desktop"],
+          "description": "Coarse device category."
+        },
+        "referrerHost": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Referring hostname or 'direct'."
+        },
+        "geoSource": {
+          "type": "string",
+          "enum": ["server-header", "ip-geo", "timezone"],
+          "description": "How coarse geographic location was resolved."
+        },
+        "dayKey": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "UTC/local calendar day key (YYYY-MM-DD)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": [
+        "countryCode",
+        "countryName",
+        "region",
+        "city",
+        "continent",
+        "timezone",
+        "visitorLang",
+        "deviceType",
+        "referrerHost",
+        "geoSource",
+        "dayKey",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -265,6 +353,12 @@
         "$ref": "#/entities/PsychologicalProfile"
       },
       "description": "Publicly readable psychological and musical taste profile (main) generated and saved exclusively by Joan Manuel."
+    },
+    "/visits/{visitId}": {
+      "schema": {
+        "$ref": "#/entities/PageVisit"
+      },
+      "description": "Append-only anonymous page visit events with coarse geography, readable and deletable exclusively by Joan Manuel."
     }
   }
 }

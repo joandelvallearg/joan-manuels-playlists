@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AudioWaveform,
+  Heart,
   Languages,
   ListOrdered,
+  ListPlus,
   Music2,
   Pause,
   Play,
@@ -11,6 +13,7 @@ import {
   SkipForward,
   Square,
   Volume2,
+  X,
 } from 'lucide-react';
 import type { UiStringKey } from '../data/translations';
 import type { AudioPlayMode, Track } from '../types';
@@ -85,6 +88,11 @@ interface AudioDeckPlayerProps {
   onSelectTrack: (track: Track) => void;
   translateTerm: (term: string) => string;
   getTitleGloss: (track: Track) => string | null;
+  isTrackLiked: (trackId: string) => boolean;
+  onToggleLike: (trackId: string) => void;
+  onOpenAddToPlaylist: (track: Track) => void;
+  activePersonalPlaylistName: string | null;
+  onClearPersonalPlaylist: () => void;
 }
 
 export function AudioDeckPlayer({
@@ -104,6 +112,11 @@ export function AudioDeckPlayer({
   onSelectTrack,
   translateTerm,
   getTitleGloss,
+  isTrackLiked,
+  onToggleLike,
+  onOpenAddToPlaylist,
+  activePersonalPlaylistName,
+  onClearPersonalPlaylist,
 }: AudioDeckPlayerProps) {
   const playerHostRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YtPlayerInstance | null>(null);
@@ -377,13 +390,30 @@ export function AudioDeckPlayer({
         <div className="rounded-2xl border border-zinc-200 bg-[#F6F7F9] p-5 sm:p-6 transition-colors dark:border-zinc-800 dark:bg-zinc-900/90">
           {/* Quiet Header Meta Line (Zero pills, zero pulsing dots) */}
           <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-zinc-200/80 dark:border-zinc-800">
-            <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
               <Volume2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" aria-hidden="true" />
               <span>{t('audioOnlyNotice')}</span>
               <span aria-hidden="true">·</span>
               <span className="tabular-nums">
                 {queue.length} {t('audioQueueCount')}
               </span>
+              {activePersonalPlaylistName && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span data-testid="audio-personal-playlist-label" className="font-semibold text-blue-700 dark:text-blue-400">
+                    {t('listeningPersonalPlaylist')} {activePersonalPlaylistName}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="audio-exit-personal-playlist"
+                    onClick={onClearPersonalPlaylist}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-200/70 hover:text-zinc-950 cursor-pointer dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                    <span>{t('exitPersonalPlaylist')}</span>
+                  </button>
+                </>
+              )}
             </div>
 
             {nextTrack && (
@@ -442,6 +472,44 @@ export function AudioDeckPlayer({
                   {translateTerm(activeTrack.genre)}
                 </span>
               </div>
+
+              {/* Visitor Like & Add-to-Playlist Actions */}
+              {(() => {
+                const liked = isTrackLiked(activeTrack.id);
+                return (
+                  <div className="flex flex-wrap items-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      data-testid="audio-like-btn"
+                      aria-pressed={liked}
+                      aria-label={`${liked ? t('unlikeTrack') : t('likeTrack')}: ${activeTrack.title}`}
+                      onClick={() => onToggleLike(activeTrack.id)}
+                      className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        liked
+                          ? 'border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-800/80 dark:bg-rose-950/50 dark:text-rose-200 dark:hover:bg-rose-900/60'
+                          : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:text-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:text-white'
+                      }`}
+                    >
+                      <Heart
+                        className={`h-3.5 w-3.5 ${liked ? 'fill-rose-600 text-rose-600 dark:fill-rose-500 dark:text-rose-500' : ''}`}
+                        aria-hidden="true"
+                      />
+                      <span>{liked ? t('unlikeTrack') : t('likeTrack')}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-testid="audio-add-playlist-btn"
+                      aria-label={`${t('addToPlaylist')}: ${activeTrack.title}`}
+                      onClick={() => onOpenAddToPlaylist(activeTrack)}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition-colors hover:border-zinc-300 hover:text-zinc-950 whitespace-nowrap shrink-0 cursor-pointer dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:text-white"
+                    >
+                      <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>{t('addToPlaylist')}</span>
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Transport Controls + Progress Bar */}

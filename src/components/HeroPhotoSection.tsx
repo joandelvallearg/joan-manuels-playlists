@@ -1,4 +1,4 @@
-import { Globe, Lock, UserCheck } from 'lucide-react';
+import { BarChart3, Globe, Lock, UserCheck } from 'lucide-react';
 import { LANGUAGE_OPTIONS, type UiStringKey } from '../data/translations';
 import { OWNER_SPANISH_NAME, type TransliterationInfo } from '../types';
 
@@ -10,7 +10,8 @@ interface HeroPhotoSectionProps {
   transliteration: TransliterationInfo;
   totalTracks: number;
   isOwner: boolean;
-  onOpenOwnerStudio: (initialTab?: 'video' | 'photo') => void;
+  ownerTotalVisits?: number;
+  onOpenOwnerStudio: (initialTab?: 'video' | 'photo' | 'stats') => void;
 }
 
 export function HeroPhotoSection({
@@ -21,6 +22,7 @@ export function HeroPhotoSection({
   transliteration,
   totalTracks,
   isOwner,
+  ownerTotalVisits = 0,
   onOpenOwnerStudio,
 }: HeroPhotoSectionProps) {
   return (
@@ -104,6 +106,23 @@ export function HeroPhotoSection({
               )}
               <span>{isOwner ? t('ownerStudioButton') : t('ownerSignInButton')}</span>
             </button>
+
+            {isOwner && (
+              <button
+                type="button"
+                data-testid="owner-visits-trigger"
+                onClick={() => onOpenOwnerStudio('stats')}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-1.5 text-xs font-semibold text-blue-900 transition-colors hover:bg-blue-100 whitespace-nowrap cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-blue-800/70 dark:bg-blue-950/50 dark:text-blue-200 dark:hover:bg-blue-900/60"
+              >
+                <BarChart3 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+                <span className="font-mono tabular-nums">{ownerTotalVisits}</span>
+                <span>
+                  {ownerTotalVisits === 1
+                    ? t('ownerVisitsBadgeSingle')
+                    : t('ownerVisitsBadgePlural')}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </div>

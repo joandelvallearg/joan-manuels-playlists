@@ -1,11 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   buildAudioQueue,
   buildFallbackPsychologicalProfile,
   computeGenreSimilarityScore,
+  extractComparableTitleKeys,
   extractYouTubeId,
   filterTracks,
+  findCatalogDuplicateGroups,
+  findDuplicateTrackMatches,
   formatAudioTime,
   formatProfileDate,
   getAdjacentAudioTrack,
@@ -14,7 +19,9 @@ import {
   groupTracksByCountry,
   groupTracksByLanguage,
   isPrivateDevUrl,
+  normalizeArtistTokens,
   normalizeLanguageCode,
+  normalizeSongTitleForComparison,
   resolveCountryCode,
   resolveInitialTheme,
   resolveLanguageCode,
@@ -30,7 +37,9 @@ import {
   parseGoogleTranslateResponse,
   translateTermsPublicFallback,
 } from './profileTranslation';
-import type { PsychologicalProfile, Track } from '../types';
+import { BASE_UI_STRINGS } from '../data/translations';
+import { OwnerStudioModal } from '../components/OwnerStudioModal';
+import { OWNER_EMAIL, type PsychologicalProfile, type Track } from '../types';
 
 const SAMPLE_TRACKS: Track[] = [
   {
@@ -448,5 +457,267 @@ test('shouldShowVideoGallery hides full catalog until country, language, filter,
     true
   );
 });
+
+test('findDuplicateTrackMatches detects exact videos, same song/artist variants, and alternate interpretations without false positives', () => {
+  const catalog: Track[] = [
+    {
+      id: 'c1',
+      ownerId: 'owner1',
+      youtubeId: 'abc12345678',
+      youtubeUrl: 'https://www.youtube.com/watch?v=abc12345678',
+      title: 'Mil Horas',
+      artist: 'Los Abuelos de la Nada',
+      country: 'Argentina',
+      countryCode: 'AR',
+      language: 'Español',
+      languageCode: 'es',
+      genre: 'Rock Nacional',
+      thumbnailUrl: 'https://i.ytimg.com/vi/sample/hqdefault.jpg',
+      createdAtMs: 1000,
+    },
+    {
+      id: 'c2',
+      ownerId: 'owner1',
+      youtubeId: 'def12345678',
+      youtubeUrl: 'https://www.youtube.com/watch?v=def12345678',
+      title: 'Louca Por Ti (Dust In The Wind)',
+      artist: 'Calcinha Preta',
+      country: 'Brasil',
+      countryCode: 'BR',
+      language: 'Português',
+      languageCode: 'pt',
+      genre: 'Forró',
+      thumbnailUrl: 'https://i.ytimg.com/vi/sample/hqdefault.jpg',
+      createdAtMs: 2000,
+    },
+    {
+      id: 'c3',
+      ownerId: 'owner1',
+      youtubeId: 'ghi12345678',
+      youtubeUrl: 'https://www.youtube.com/watch?v=ghi12345678',
+      title: 'Nuestro Juramento',
+      artist: 'Julio Jaramillo',
+      country: 'Ecuador',
+      countryCode: 'EC',
+      language: 'Español',
+      languageCode: 'es',
+      genre: 'Pasillo',
+      thumbnailUrl: 'https://i.ytimg.com/vi/sample/hqdefault.jpg',
+      createdAtMs: 3000,
+    },
+    {
+      id: 'c4',
+      ownerId: 'owner1',
+      youtubeId: 'cyr12345678',
+      youtubeUrl: 'https://www.youtube.com/watch?v=cyr12345678',
+      title: 'Яд',
+      artist: 'Эрика Лундмоен',
+      country: 'Rusia',
+      countryCode: 'RU',
+      language: 'Ruso',
+      languageCode: 'ru',
+      genre: 'Pop Alternativo',
+      thumbnailUrl: 'https://i.ytimg.com/vi/sample/hqdefault.jpg',
+      createdAtMs: 4000,
+    },
+  ];
+
+  // Normalization sanity checks
+  assert.equal(normalizeSongTitleForComparison('Mil Horas (Official Video)'), 'mil horas');
+  assert.equal(normalizeSongTitleForComparison('Despacito - Remix'), 'despacito');
+  assert.ok(extractComparableTitleKeys('Louca Por Ti (Dust In The Wind)').includes('dust in the wind'));
+  assert.deepEqual(normalizeArtistTokens('Celine Dion & Andrea Bocelli'), ['celine dion', 'andrea bocelli']);
+
+  // 1. Exact YouTube video match
+  const exactMatches = findDuplicateTrackMatches({ youtubeId: 'abc12345678' }, catalog);
+  assert.equal(exactMatches.length, 1);
+  assert.equal(exactMatches[0].matchType, 'exact-video');
+  assert.equal(exactMatches[0].track.id, 'c1');
+
+  // 2. Same song + same artist with casing/live tag differences on a different YouTube URL
+  const sameSongArtistMatches = findDuplicateTrackMatches(
+    {
+      youtubeId: 'xyz99999999',
+      title: 'Mil horas (En vivo)',
+      artist: 'Los Abuelos De La Nada',
+    },
+    catalog
+  );
+  assert.equal(sameSongArtistMatches.length, 1);
+  assert.equal(sameSongArtistMatches[0].matchType, 'same-song-artist');
+  assert.equal(sameSongArtistMatches[0].track.id, 'c1');
+
+  // 3. Alternate interpretation via different artist / cover subtitle / Cyrillic variant
+  const coverMatches = findDuplicateTrackMatches(
+    {
+      youtubeId: 'kns11111111',
+      title: 'Dust in the Wind',
+      artist: 'Kansas',
+    },
+    catalog
+  );
+  assert.equal(coverMatches.length, 1);
+  assert.equal(coverMatches[0].matchType, 'same-song-interpretation');
+  assert.equal(coverMatches[0].track.id, 'c2');
+
+  const cyrillicMatches = findDuplicateTrackMatches(
+    {
+      youtubeId: 'cyr99999999',
+      title: 'Яд (Acoustic)',
+      artist: 'Otro Intérprete',
+    },
+    catalog
+  );
+  assert.equal(cyrillicMatches.length, 1);
+  assert.equal(cyrillicMatches[0].matchType, 'same-song-interpretation');
+  assert.equal(cyrillicMatches[0].track.id, 'c4');
+
+  // 4. Different song by same artist MUST NOT trigger duplicate warning
+  const distinctSameArtist = findDuplicateTrackMatches(
+    {
+      youtubeId: 'jjj22222222',
+      title: 'Senderito de amor',
+      artist: 'Julio Jaramillo',
+    },
+    catalog
+  );
+  assert.deepEqual(distinctSameArtist, []);
+});
+
+test('findCatalogDuplicateGroups groups existing duplicate songs and interpretations cleanly', () => {
+  const catalog: Track[] = [
+    {
+      id: 't1',
+      ownerId: 'owner1',
+      youtubeId: 'vid00000001',
+      youtubeUrl: 'https://www.youtube.com/watch?v=vid00000001',
+      title: 'Mil Horas',
+      artist: 'Los Abuelos de la Nada',
+      country: 'Argentina',
+      countryCode: 'AR',
+      language: 'Español',
+      languageCode: 'es',
+      genre: 'Rock Nacional',
+      thumbnailUrl: 'https://i.ytimg.com/vi/sample/hqdefault.jpg',
+      createdAtMs: 1,
+    },
+    {
+      id: 't2',
+      ownerId: 'owner1',
+      youtubeId: 'vid00000002',
+      youtubeUrl: 'https://www.youtube.com/watch?v=vid00000002',
+      title: 'Mil Horas (Official Video)',
+      artist: 'Los Abuelos De La Nada',
+      country: 'Argentina',
+      countryCode: 'AR',
+      language: 'Español',
+      languageCode: 'es',
+      genre: 'Rock',
+      thumbnailUrl: 'https://i.ytimg.com/vi/sample/hqdefault.jpg',
+      createdAtMs: 2,
+    },
+    {
+      id: 't3',
+      ownerId: 'owner1',
+      youtubeId: 'vid00000003',
+      youtubeUrl: 'https://www.youtube.com/watch?v=vid00000003',
+      title: 'Canción Única',
+      artist: 'Artista Único',
+      country: 'España',
+      countryCode: 'ES',
+      language: 'Español',
+      languageCode: 'es',
+      genre: 'Pop',
+      thumbnailUrl: 'https://i.ytimg.com/vi/sample/hqdefault.jpg',
+      createdAtMs: 3,
+    },
+  ];
+
+  const groups = findCatalogDuplicateGroups(catalog);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].matchType, 'same-song-artist');
+  assert.deepEqual(
+    groups[0].tracks.map((tr) => tr.id),
+    ['t1', 't2']
+  );
+});
+
+test('OwnerStudioModal renders duplicate URL alert, publish confirmation alert, and catalog duplicate summary', () => {
+  const existingTracks: Track[] = [
+    {
+      id: 't1',
+      ownerId: 'owner1',
+      youtubeId: 'dQw4w9WgXcQ',
+      youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      title: 'Mil Horas',
+      artist: 'Los Abuelos de la Nada',
+      country: 'Argentina',
+      countryCode: 'AR',
+      language: 'Español',
+      languageCode: 'es',
+      genre: 'Rock Nacional',
+      thumbnailUrl: 'https://i.ytimg.com/vi/sample/hqdefault.jpg',
+      createdAtMs: 100,
+    },
+    {
+      id: 't2',
+      ownerId: 'owner1',
+      youtubeId: 'other000002',
+      youtubeUrl: 'https://www.youtube.com/watch?v=other000002',
+      title: 'Mil Horas (En Vivo)',
+      artist: 'Los Abuelos De La Nada',
+      country: 'Argentina',
+      countryCode: 'AR',
+      language: 'Español',
+      languageCode: 'es',
+      genre: 'Rock Nacional',
+      thumbnailUrl: 'https://i.ytimg.com/vi/sample/hqdefault.jpg',
+      createdAtMs: 200,
+    },
+  ];
+
+  const html = renderToStaticMarkup(
+    createElement(OwnerStudioModal, {
+      open: true,
+      initialTab: 'video',
+      onClose: () => {},
+      t: (key) => BASE_UI_STRINGS[key],
+      user: { email: OWNER_EMAIL } as never,
+      isOwner: true,
+      existingTracks,
+      initialYoutubeUrl: 'https://youtu.be/dQw4w9WgXcQ',
+      initialAnalyzed: {
+        youtubeId: 'newid999999',
+        youtubeUrl: 'https://www.youtube.com/watch?v=newid999999',
+        title: 'Mil Horas (Cover)',
+        artist: 'Otro Artista',
+        country: 'Argentina',
+        countryCode: 'AR',
+        language: 'Español',
+        languageCode: 'es',
+        genre: 'Pop',
+        isRemix: false,
+        curatorNote: '',
+        thumbnailUrl: 'https://i.ytimg.com/vi/newid999999/hqdefault.jpg',
+      },
+      onSignIn: async () => {},
+      onSignOut: async () => {},
+      onPublishTrack: async () => {},
+      onUploadPhoto: async () => {},
+      hasDefaultTracks: false,
+      hasDefaultPhotos: false,
+      onClearDefaultTracks: async () => {},
+      onClearDefaultPhotos: async () => {},
+    })
+  );
+
+  assert.ok(html.includes('data-testid="duplicate-url-alert"'));
+  assert.ok(html.includes('data-testid="duplicate-track-alert"'));
+  assert.ok(html.includes('data-testid="duplicate-confirm-checkbox"'));
+  assert.ok(html.includes('data-testid="catalog-duplicates-notice"'));
+  assert.ok(html.includes(BASE_UI_STRINGS.duplicateInterpretationAlertTitle));
+  assert.ok(html.includes('disabled=""'));
+});
+
 
 

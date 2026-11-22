@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
+  getCountFromServer,
   getDoc,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -14,13 +17,14 @@ import {
 } from 'firebase/firestore';
 import { QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { AddToPlaylistModal } from './components/AddToPlaylistModal';
 import { AudioDeckPlayer, type AudioPlaybackStatus } from './components/AudioDeckPlayer';
 import { Header } from './components/Header';
 import { HeroPhotoSection } from './components/HeroPhotoSection';
 import { OwnerStudioModal } from './components/OwnerStudioModal';
 import { PhotoGallerySection } from './components/PhotoGallerySection';
 import { PhotoLightbox } from './components/PhotoLightbox';
-import { PlaylistExplorer } from './components/PlaylistExplorer';
+import { HISTORY_VIRTUAL_PLAYLIST_ID, PlaylistExplorer } from './components/PlaylistExplorer';
 import { QrShareModal } from './components/QrShareModal';
 import { StagePlayer } from './components/StagePlayer';
 import { SEED_PHOTOS, SEED_TRACKS } from './data/seedData';
@@ -47,6 +51,7 @@ import {
   type AnalyzedVideoResult,
   type AudioPlayMode,
   type GeneratedProfileDraft,
+  type PageVisit,
   type Photo,
   type PlaylistGroup,
   type PlaylistMode,
@@ -54,6 +59,8 @@ import {
   type PsychologicalProfile,
   type Track,
   type TransliterationInfo,
+  type VisitGeoSource,
+  type VisitorLibraryState,
 } from './types';
 import {
   buildAudioQueue,
@@ -81,6 +88,26 @@ import {
   resolveTitleGloss,
   type TitleAnnotation,
 } from './utils/titleLocalization';
+import {
+  LIKED_VIRTUAL_PLAYLIST_ID,
+  createVisitorPlaylist,
+  deleteVisitorPlaylist,
+  loadVisitorLibrary,
+  recordListeningHistory,
+  renameVisitorPlaylist,
+  resolveLibraryTracks,
+  saveVisitorLibrary,
+  toggleLikedTrack,
+  toggleTrackInPlaylist,
+} from './utils/visitorLibrary';
+import {
+  buildSanitizedVisitPayload,
+  detectVisitorDeviceType,
+  generateSafeVisitId,
+  inferGeoFromTimezoneAndLocale,
+  sanitizeReferrerHost,
+  VISIT_SESSION_KEY,
+} from './utils/visitAnalytics';
 
 interface CachedTranslationPayload {
   transliteratedName: string;
@@ -123,10 +150,21 @@ export default function App() {
   const [audioPlayMode, setAudioPlayMode] = useState<AudioPlayMode>('ordered');
   const [audioPlaybackStatus, setAudioPlaybackStatus] = useState<AudioPlaybackStatus>('stopped');
   const [radioSeed, setRadioSeed] = useState<number>(1);
+  const [activePersonalAudioId, setActivePersonalAudioId] = useState<string | null>(null);
+
+  const [visitorLibrary, setVisitorLibrary] = useState<VisitorLibraryState>(() =>
+    loadVisitorLibrary()
+  );
+  const [playlistModalTrackId, setPlaylistModalTrackId] = useState<string | null>(null);
 
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [ownerModalOpen, setOwnerModalOpen] = useState(false);
-  const [ownerModalTab, setOwnerModalTab] = useState<'video' | 'photo'>('video');
+  const [ownerModalTab, setOwnerModalTab] = useState<'video' | 'photo' | 'stats'>('video');
+  const [ownerVisits, setOwnerVisits] = useState<PageVisit[]>([]);
+  const [ownerTotalVisits, setOwnerTotalVisits] = useState<number>(0);
+  const [ownerStatsLoading, setOwnerStatsLoading] = useState<boolean>(false);
+  const [ownerStatsError, setOwnerStatsError] = useState<string | null>(null);
+  const visitRecordedRef = useRef(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [serverPublicUrl, setServerPublicUrl] = useState('');
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -186,6 +224,200 @@ export default function App() {
         // Ignore network errors on health check
       });
     return () => unsub();
+  }, []);
+
+  const loadOwnerVisitStats = useCallback(async () => {
+    if (!isOwner) return;
+    setOwnerStatsLoading(true);
+    setOwnerStatsError(null);
+    try {
+      const visitsCol = collection(db, 'visits');
+      const [countSnap, docsSnap] = await Promise.all([
+        getCountFromServer(visitsCol),
+        getDocs(query(visitsCol, orderBy('createdAt', 'desc'), limit(1000))),
+      ]);
+      const items: PageVisit[] = docsSnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          countryCode: String(data.countryCode ?? 'ZZ'),
+          countryName: String(data.countryName ?? 'Ubicación no especificada'),
+          region: String(data.region ?? ''),
+          city: String(data.city ?? ''),
+          continent: String(data.continent ?? ''),
+          timezone: String(data.timezone ?? ''),
+          visitorLang: String(data.visitorLang ?? 'es'),
+          deviceType:
+            data.deviceType === 'mobile' || data.deviceType === 'tablet'
+              ? data.deviceType
+              : 'desktop',
+          referrerHost: String(data.referrerHost ?? 'direct'),
+          geoSource:
+            data.geoSource === 'server-header' || data.geoSource === 'ip-geo'
+              ? data.geoSource
+              : 'timezone',
+          dayKey: String(data.dayKey ?? ''),
+          createdAtMs:
+            typeof data.createdAt?.toMillis === 'function' ? data.createdAt.toMillis() : 0,
+        };
+      });
+      setOwnerTotalVisits(Math.max(countSnap.data().count, items.length));
+      setOwnerVisits(items);
+    } catch (error) {
+      setOwnerStatsError(
+        error instanceof Error ? error.message : 'No se pudieron cargar las estadísticas.'
+      );
+    } finally {
+      setOwnerStatsLoading(false);
+    }
+  }, [isOwner]);
+
+  useEffect(() => {
+    if (isOwner) {
+      loadOwnerVisitStats();
+    } else {
+      setOwnerVisits([]);
+      setOwnerTotalVisits(0);
+      setOwnerStatsError(null);
+    }
+  }, [isOwner, loadOwnerVisitStats]);
+
+  // Record one anonymous visit per browser tab session (never counts signed-in owner)
+  useEffect(() => {
+    if (typeof window === 'undefined' || visitRecordedRef.current) return;
+    try {
+      if (window.sessionStorage.getItem(VISIT_SESSION_KEY) === '1') {
+        visitRecordedRef.current = true;
+        return;
+      }
+    } catch {
+      // Ignore sessionStorage restrictions
+    }
+
+    visitRecordedRef.current = true;
+    let cancelled = false;
+
+    const recordVisit = async () => {
+      try {
+        await auth.authStateReady();
+        if (cancelled) return;
+        const currentUser = auth.currentUser;
+        if (
+          currentUser &&
+          currentUser.emailVerified &&
+          currentUser.email?.toLowerCase() === OWNER_EMAIL.toLowerCase()
+        ) {
+          return;
+        }
+
+        const timeZone =
+          typeof Intl !== 'undefined'
+            ? Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+            : '';
+        const browserLang = typeof navigator !== 'undefined' ? navigator.language || 'es' : 'es';
+        const fallbackGeo = inferGeoFromTimezoneAndLocale(timeZone, browserLang);
+
+        let resolvedCountryCode = fallbackGeo.countryCode;
+        let resolvedCountryName = fallbackGeo.countryName;
+        let resolvedRegion = fallbackGeo.region;
+        let resolvedCity = fallbackGeo.city;
+        let resolvedContinent = fallbackGeo.continent;
+        let resolvedGeoSource: VisitGeoSource = 'timezone';
+
+        const fetchJsonWithTimeout = async <T,>(url: string): Promise<T | null> => {
+          const controller = new AbortController();
+          const timer = window.setTimeout(() => controller.abort(), 2500);
+          try {
+            const res = await fetch(url, { signal: controller.signal });
+            const cType = res.headers.get('content-type') || '';
+            if (!res.ok || !cType.includes('application/json')) return null;
+            return (await res.json()) as T;
+          } catch {
+            return null;
+          } finally {
+            window.clearTimeout(timer);
+          }
+        };
+
+        const serverGeo = await fetchJsonWithTimeout<{
+          countryCode?: string;
+          countryName?: string;
+          region?: string;
+          city?: string;
+          continent?: string;
+          geoSource?: 'server-header' | 'ip-geo' | 'none';
+        }>('/api/visitor-geo');
+
+        if (serverGeo && serverGeo.geoSource && serverGeo.geoSource !== 'none' && serverGeo.countryCode) {
+          resolvedCountryCode = serverGeo.countryCode;
+          resolvedCountryName = serverGeo.countryName || '';
+          resolvedRegion = serverGeo.region || '';
+          resolvedCity = serverGeo.city || '';
+          resolvedContinent = serverGeo.continent || fallbackGeo.continent;
+          resolvedGeoSource = serverGeo.geoSource;
+        } else if (
+          window.location.hostname !== 'localhost' &&
+          window.location.hostname !== '127.0.0.1'
+        ) {
+          // Static host fallback (e.g. Vercel SPA without Express /api/visitor-geo)
+          const publicGeo = await fetchJsonWithTimeout<{
+            country_code?: string;
+            country?: string;
+            region?: string;
+            city?: string;
+            continent_code?: string;
+          }>('https://get.geojs.io/v1/ip/geo.json');
+          if (publicGeo?.country_code && /^[A-Z]{2,3}$/i.test(publicGeo.country_code)) {
+            resolvedCountryCode = publicGeo.country_code.toUpperCase();
+            resolvedCountryName = publicGeo.country || '';
+            resolvedRegion = publicGeo.region || '';
+            resolvedCity = publicGeo.city || '';
+            resolvedContinent = publicGeo.continent_code || fallbackGeo.continent;
+            resolvedGeoSource = 'ip-geo';
+          }
+        }
+
+        if (cancelled) return;
+
+        const payload = buildSanitizedVisitPayload({
+          countryCode: resolvedCountryCode,
+          countryName: resolvedCountryName,
+          region: resolvedRegion,
+          city: resolvedCity,
+          continent: resolvedContinent,
+          timezone: timeZone,
+          visitorLang: browserLang,
+          deviceType: detectVisitorDeviceType(
+            typeof navigator !== 'undefined' ? navigator.userAgent : '',
+            window.innerWidth
+          ),
+          referrerHost: sanitizeReferrerHost(
+            typeof document !== 'undefined' ? document.referrer : '',
+            window.location.hostname
+          ),
+          geoSource: resolvedGeoSource,
+        });
+
+        const visitId = generateSafeVisitId();
+        await setDoc(doc(db, 'visits', visitId), {
+          ...payload,
+          createdAt: serverTimestamp(),
+        });
+
+        try {
+          window.sessionStorage.setItem(VISIT_SESSION_KEY, '1');
+        } catch {
+          // Ignore sessionStorage write errors
+        }
+      } catch {
+        // Silently ignore visit-tracking errors so visitors are never affected
+      }
+    };
+
+    recordVisit();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Subscribe to public tracks & photos in Firestore
@@ -704,6 +936,36 @@ export default function App() {
     return map;
   }, [allTracks, getTitleGloss]);
 
+  useEffect(() => {
+    saveVisitorLibrary(visitorLibrary);
+  }, [visitorLibrary]);
+
+  const likedTracks = useMemo(
+    () => resolveLibraryTracks(visitorLibrary.likedTrackIds, allTracks),
+    [visitorLibrary.likedTrackIds, allTracks]
+  );
+
+  const historyTracks = useMemo(
+    () => resolveLibraryTracks(visitorLibrary.historyTrackIds, allTracks),
+    [visitorLibrary.historyTrackIds, allTracks]
+  );
+
+  const visitorPlaylistsResolved = useMemo(
+    () =>
+      visitorLibrary.playlists.map((playlist) => ({
+        playlist,
+        tracks: resolveLibraryTracks(playlist.trackIds, allTracks),
+      })),
+    [visitorLibrary.playlists, allTracks]
+  );
+
+  const selectedPersonalTrackIds = useMemo(() => {
+    if (mode !== 'my-playlists' || !selectedKey) return undefined;
+    if (selectedKey === LIKED_VIRTUAL_PLAYLIST_ID) return visitorLibrary.likedTrackIds;
+    if (selectedKey === HISTORY_VIRTUAL_PLAYLIST_ID) return visitorLibrary.historyTrackIds;
+    return visitorLibrary.playlists.find((pl) => pl.id === selectedKey)?.trackIds ?? [];
+  }, [mode, selectedKey, visitorLibrary]);
+
   const filteredTracks = useMemo(
     () =>
       filterTracks(allTracks, {
@@ -712,8 +974,9 @@ export default function App() {
         genre: selectedGenre,
         query: searchQuery,
         titleGlosses: titleGlossByTrackId,
+        visitorSelectedTrackIds: selectedPersonalTrackIds,
       }),
-    [allTracks, mode, selectedKey, selectedGenre, searchQuery, titleGlossByTrackId]
+    [allTracks, mode, selectedKey, selectedGenre, searchQuery, titleGlossByTrackId, selectedPersonalTrackIds]
   );
 
   const activeTrack = useMemo(
@@ -724,26 +987,115 @@ export default function App() {
   const queue = filteredTracks.length > 0 ? filteredTracks : allTracks;
   const activeQueueIndex = activeTrack ? queue.findIndex((tr) => tr.id === activeTrack.id) : -1;
 
+  const activePersonalAudioInfo = useMemo(() => {
+    if (!activePersonalAudioId) return null;
+    if (activePersonalAudioId === LIKED_VIRTUAL_PLAYLIST_ID) {
+      return likedTracks.length > 0
+        ? { id: LIKED_VIRTUAL_PLAYLIST_ID, name: t('likedSongsPlaylistName'), tracks: likedTracks }
+        : null;
+    }
+    if (activePersonalAudioId === HISTORY_VIRTUAL_PLAYLIST_ID) {
+      return historyTracks.length > 0
+        ? { id: HISTORY_VIRTUAL_PLAYLIST_ID, name: t('recentHistoryTitle'), tracks: historyTracks }
+        : null;
+    }
+    const found = visitorPlaylistsResolved.find((item) => item.playlist.id === activePersonalAudioId);
+    if (!found || found.tracks.length === 0) return null;
+    return {
+      id: found.playlist.id,
+      name: found.playlist.name,
+      tracks: found.tracks,
+    };
+  }, [activePersonalAudioId, likedTracks, historyTracks, visitorPlaylistsResolved, t]);
+
+  const audioSourceTracks = activePersonalAudioInfo ? activePersonalAudioInfo.tracks : allTracks;
+
   const currentAudioTrack = useMemo(() => {
     if (audioTrackId) {
-      const found = allTracks.find((tr) => tr.id === audioTrackId);
-      if (found) return found;
+      const foundInSource = audioSourceTracks.find((tr) => tr.id === audioTrackId);
+      if (foundInSource) return foundInSource;
+      if (!activePersonalAudioInfo) {
+        const foundAny = allTracks.find((tr) => tr.id === audioTrackId);
+        if (foundAny) return foundAny;
+      }
     }
-    return allTracks[0] ?? null;
-  }, [allTracks, audioTrackId]);
+    return audioSourceTracks[0] ?? allTracks[0] ?? null;
+  }, [audioSourceTracks, allTracks, audioTrackId, activePersonalAudioInfo]);
 
   const audioAnchorTrack = useMemo(() => {
     if (audioAnchorTrackId) {
-      const found = allTracks.find((tr) => tr.id === audioAnchorTrackId);
+      const found = audioSourceTracks.find((tr) => tr.id === audioAnchorTrackId);
       if (found) return found;
     }
     return currentAudioTrack;
-  }, [allTracks, audioAnchorTrackId, currentAudioTrack]);
+  }, [audioSourceTracks, audioAnchorTrackId, currentAudioTrack]);
 
   const audioQueue = useMemo(
-    () => buildAudioQueue(allTracks, audioAnchorTrack, audioPlayMode, radioSeed),
-    [allTracks, audioAnchorTrack, audioPlayMode, radioSeed]
+    () => buildAudioQueue(audioSourceTracks, audioAnchorTrack, audioPlayMode, radioSeed),
+    [audioSourceTracks, audioAnchorTrack, audioPlayMode, radioSeed]
   );
+
+  const playlistModalTrack = useMemo(
+    () => (playlistModalTrackId ? allTracks.find((tr) => tr.id === playlistModalTrackId) ?? null : null),
+    [allTracks, playlistModalTrackId]
+  );
+
+  const isTrackLiked = useCallback(
+    (trackId: string) => visitorLibrary.likedTrackIds.includes(trackId),
+    [visitorLibrary.likedTrackIds]
+  );
+
+  const handleToggleLike = useCallback((trackId: string) => {
+    setVisitorLibrary((prev) => toggleLikedTrack(prev, trackId));
+  }, []);
+
+  const handleCreatePlaylist = useCallback((name: string) => {
+    setVisitorLibrary((prev) => {
+      const { state, createdPlaylist } = createVisitorPlaylist(prev, name);
+      if (createdPlaylist) {
+        setSelectedKey(createdPlaylist.id);
+      }
+      return state;
+    });
+  }, []);
+
+  const handleCreatePlaylistWithTrack = useCallback((name: string, trackId: string) => {
+    setVisitorLibrary((prev) => createVisitorPlaylist(prev, name, trackId).state);
+  }, []);
+
+  const handleToggleTrackInPlaylist = useCallback((playlistId: string, trackId: string) => {
+    setVisitorLibrary((prev) => toggleTrackInPlaylist(prev, playlistId, trackId));
+  }, []);
+
+  const handleRenamePlaylist = useCallback((playlistId: string, name: string) => {
+    setVisitorLibrary((prev) => renameVisitorPlaylist(prev, playlistId, name));
+  }, []);
+
+  const handleDeletePlaylist = useCallback((playlistId: string) => {
+    setVisitorLibrary((prev) => deleteVisitorPlaylist(prev, playlistId));
+    setSelectedKey((prev) => (prev === playlistId ? null : prev));
+    setActivePersonalAudioId((prev) => (prev === playlistId ? null : prev));
+  }, []);
+
+  const handlePlayPersonalAudio = useCallback(
+    (playlistId: string, _playlistName: string, tracks: Track[]) => {
+      if (tracks.length === 0) return;
+      setActiveTrackId(null);
+      setActivePersonalAudioId(playlistId);
+      setAudioTrackId(tracks[0].id);
+      setAudioAnchorTrackId(tracks[0].id);
+      setAudioPlaybackStatus('playing');
+      setVisitorLibrary((prev) => recordListeningHistory(prev, tracks[0].id));
+      document.getElementById('audio-player')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (audioPlaybackStatus === 'playing' && currentAudioTrack) {
+      setVisitorLibrary((prev) => recordListeningHistory(prev, currentAudioTrack.id));
+    }
+  }, [audioPlaybackStatus, currentAudioTrack]);
 
   const handleAudioPlayPause = useCallback(() => {
     if (!currentAudioTrack) return;
@@ -813,7 +1165,7 @@ export default function App() {
     if (isAtEndOfRadio) {
       const nextSeed = radioSeed + 1;
       setRadioSeed(nextSeed);
-      const nextQueue = buildAudioQueue(allTracks, currentAudioTrack, 'radio', nextSeed);
+      const nextQueue = buildAudioQueue(audioSourceTracks, currentAudioTrack, 'radio', nextSeed);
       const candidate = nextQueue.find((tr) => tr.id !== currentAudioTrack?.id) ?? nextQueue[0];
       if (candidate) {
         setAudioTrackId(candidate.id);
@@ -827,7 +1179,7 @@ export default function App() {
     if (!nextTrack) return;
     setAudioTrackId(nextTrack.id);
     setAudioPlaybackStatus('playing');
-  }, [audioPlayMode, audioQueue, currentAudioTrack, radioSeed, allTracks]);
+  }, [audioPlayMode, audioQueue, currentAudioTrack, radioSeed, audioSourceTracks]);
 
   const handlePlayTrack = (track: Track) => {
     setAudioPlaybackStatus((prev) => (prev === 'playing' ? 'paused' : prev));
@@ -835,6 +1187,7 @@ export default function App() {
     setAudioAnchorTrackId(track.id);
     setActiveTrackId(track.id);
     setAutoplayPlayer(true);
+    setVisitorLibrary((prev) => recordListeningHistory(prev, track.id));
     document.getElementById('player')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
 
@@ -869,19 +1222,23 @@ export default function App() {
     setSelectedKey(null);
   };
 
-  // Sync top-bar hash links (#playlists / #playlists-language) with playlist mode
+  // Sync top-bar hash links (#playlists / #playlists-language / #my-playlists) with playlist mode
   useEffect(() => {
-    const onHashChange = () => {
+    const syncHash = () => {
       if (window.location.hash === '#playlists-language') {
         setMode('language');
+        setSelectedKey(null);
+      } else if (window.location.hash === '#my-playlists') {
+        setMode('my-playlists');
         setSelectedKey(null);
       } else if (window.location.hash === '#playlists') {
         setMode('country');
         setSelectedKey(null);
       }
     };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    syncHash();
+    window.addEventListener('hashchange', syncHash);
+    return () => window.removeEventListener('hashchange', syncHash);
   }, []);
 
   const handleSignIn = async () => {
@@ -1129,6 +1486,7 @@ export default function App() {
           transliteration={transliteration}
           totalTracks={allTracks.length}
           isOwner={isOwner}
+          ownerTotalVisits={ownerTotalVisits}
           onOpenOwnerStudio={(tab = 'video') => {
             setOwnerModalTab(tab);
             setOwnerModalOpen(true);
@@ -1147,6 +1505,13 @@ export default function App() {
           onClosePlayer={() => setActiveTrackId(null)}
           translateTerm={translateTerm}
           getTitleGloss={getTitleGloss}
+          isLiked={activeTrack ? isTrackLiked(activeTrack.id) : false}
+          onToggleLike={() => {
+            if (activeTrack) handleToggleLike(activeTrack.id);
+          }}
+          onOpenAddToPlaylist={() => {
+            if (activeTrack) setPlaylistModalTrackId(activeTrack.id);
+          }}
         />
 
         <AudioDeckPlayer
@@ -1162,10 +1527,15 @@ export default function App() {
           onSelectMode={handleAudioSelectMode}
           onTrackEnded={handleAudioTrackEnded}
           onSyncExternalPlaybackState={setAudioPlaybackStatus}
-          tracks={allTracks}
+          tracks={audioSourceTracks}
           onSelectTrack={handleAudioSelectTrack}
           translateTerm={translateTerm}
           getTitleGloss={getTitleGloss}
+          isTrackLiked={isTrackLiked}
+          onToggleLike={handleToggleLike}
+          onOpenAddToPlaylist={(track) => setPlaylistModalTrackId(track.id)}
+          activePersonalPlaylistName={activePersonalAudioInfo?.name ?? null}
+          onClearPersonalPlaylist={() => setActivePersonalAudioId(null)}
         />
 
         <PlaylistExplorer
@@ -1194,6 +1564,18 @@ export default function App() {
           hasAnyTracks={allTracks.length > 0}
           translateTerm={translateTerm}
           getTitleGloss={getTitleGloss}
+          isTrackLiked={isTrackLiked}
+          onToggleLike={handleToggleLike}
+          onOpenAddToPlaylist={(track) => setPlaylistModalTrackId(track.id)}
+          likedTracks={likedTracks}
+          historyTracks={historyTracks}
+          visitorPlaylists={visitorLibrary.playlists}
+          visitorPlaylistsResolved={visitorPlaylistsResolved}
+          onCreatePlaylist={handleCreatePlaylist}
+          onRenamePlaylist={handleRenamePlaylist}
+          onDeletePlaylist={handleDeletePlaylist}
+          onRemoveTrackFromPlaylist={handleToggleTrackInPlaylist}
+          onPlayPersonalAudio={handlePlayPersonalAudio}
         />
 
         <PhotoGallerySection
@@ -1264,8 +1646,10 @@ export default function App() {
         initialTab={ownerModalTab}
         onClose={() => setOwnerModalOpen(false)}
         t={t}
+        currentLang={currentLang}
         user={user}
         isOwner={isOwner}
+        existingTracks={allTracks}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
         onPublishTrack={handlePublishTrack}
@@ -1274,6 +1658,11 @@ export default function App() {
         hasDefaultPhotos={visibleSeedPhotos.length > 0}
         onClearDefaultTracks={handleClearDefaultTracks}
         onClearDefaultPhotos={handleClearDefaultPhotos}
+        visits={ownerVisits}
+        totalVisitsCount={ownerTotalVisits}
+        statsLoading={ownerStatsLoading}
+        statsError={ownerStatsError}
+        onRefreshStats={loadOwnerVisitStats}
       />
 
       <PhotoLightbox
@@ -1283,6 +1672,18 @@ export default function App() {
         onChangeIndex={setLightboxIndex}
         closeLabel={t('close')}
         translateTerm={translateTerm}
+      />
+
+      <AddToPlaylistModal
+        key={playlistModalTrack?.id ?? 'closed'}
+        track={playlistModalTrack}
+        onClose={() => setPlaylistModalTrackId(null)}
+        t={t}
+        library={visitorLibrary}
+        onToggleLike={handleToggleLike}
+        onToggleTrackInPlaylist={handleToggleTrackInPlaylist}
+        onCreatePlaylistWithTrack={handleCreatePlaylistWithTrack}
+        getTitleGloss={getTitleGloss}
       />
     </div>
   );

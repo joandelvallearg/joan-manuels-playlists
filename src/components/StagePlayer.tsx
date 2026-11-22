@@ -1,4 +1,4 @@
-import { SkipBack, SkipForward, X } from 'lucide-react';
+import { Heart, ListPlus, SkipBack, SkipForward, X } from 'lucide-react';
 import type { UiStringKey } from '../data/translations';
 import type { Track } from '../types';
 import { getCountryFlagEmoji, getYouTubeEmbedUrl } from '../utils/musicLogic';
@@ -15,6 +15,9 @@ interface StagePlayerProps {
   onClosePlayer: () => void;
   translateTerm: (term: string) => string;
   getTitleGloss: (track: Track) => string | null;
+  isLiked: boolean;
+  onToggleLike: () => void;
+  onOpenAddToPlaylist: () => void;
 }
 
 export function StagePlayer({
@@ -29,6 +32,9 @@ export function StagePlayer({
   onClosePlayer,
   translateTerm,
   getTitleGloss,
+  isLiked,
+  onToggleLike,
+  onOpenAddToPlaylist,
 }: StagePlayerProps) {
   if (!activeTrack) {
     return null;
@@ -137,25 +143,56 @@ export function StagePlayer({
               )}
             </div>
 
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={onPrevious}
-                disabled={!hasPrevious}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
-              >
-                <SkipBack className="h-4 w-4" aria-hidden="true" />
-                <span>{t('previousTrack')}</span>
-              </button>
-              <button
-                type="button"
-                onClick={onNext}
-                disabled={!hasNext}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
-              >
-                <span>{t('nextTrack')}</span>
-                <SkipForward className="h-4 w-4" aria-hidden="true" />
-              </button>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  data-testid="stage-like-btn"
+                  aria-pressed={isLiked}
+                  onClick={onToggleLike}
+                  className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                    isLiked
+                      ? 'border-rose-500/70 bg-rose-950/50 text-rose-200 hover:bg-rose-900/60'
+                      : 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
+                  }`}
+                >
+                  <Heart
+                    className={`h-3.5 w-3.5 ${isLiked ? 'fill-rose-500 text-rose-500' : ''}`}
+                    aria-hidden="true"
+                  />
+                  <span>{isLiked ? t('unlikeTrack') : t('likeTrack')}</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="stage-add-playlist-btn"
+                  onClick={onOpenAddToPlaylist}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-zinc-200 transition-colors hover:bg-zinc-800 cursor-pointer whitespace-nowrap"
+                >
+                  <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{t('addToPlaylist')}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onPrevious}
+                  disabled={!hasPrevious}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                >
+                  <SkipBack className="h-4 w-4" aria-hidden="true" />
+                  <span>{t('previousTrack')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onNext}
+                  disabled={!hasNext}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                >
+                  <span>{t('nextTrack')}</span>
+                  <SkipForward className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
             </div>
           </div>
         </div>

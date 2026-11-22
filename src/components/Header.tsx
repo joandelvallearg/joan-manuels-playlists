@@ -37,6 +37,12 @@ export function Header({ t, theme, onToggleTheme, onOpenQr }: HeaderProps) {
             {t('navByLanguage')}
           </a>
           <a
+            href="#my-playlists"
+            className="hover:text-zinc-950 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 dark:hover:text-zinc-50"
+          >
+            {t('navMyPlaylists')}
+          </a>
+          <a
             href="#gallery"
             className="hover:text-zinc-950 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 dark:hover:text-zinc-50"
           >
